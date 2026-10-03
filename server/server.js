@@ -22,6 +22,7 @@ const {
   sessionKeyForModel,
 } = require('./models');
 const { buildZip } = require('./zip-builder');
+const { effectiveScoreConfig } = require('./score-config');
 
 ensureDir(config.dataDir);
 ensureDir(config.stateDir);
@@ -501,43 +502,39 @@ function numOr(value, fallback) {
 // 把教师评分细则下发到单个会话（教师/学生同一路径）。
 // opts.applyInitTemp：仅在教师显式带 scoreConfig 且会话冷态时改 TI1103，避免把学生实验中的 560 打回 400。
 async function applyScoreConfigToEngine(engine, cfg, opts = {}) {
-  if (!engine || !cfg) return;
-  const applyInitTemp = opts.applyInitTemp !== false;
-  const isHx = engine.modelId === 'hx';
-  const du = numOr(cfg.durationUnit, 480);
-  const ds = numOr(cfg.durationSystem, 1500);
-  const bt = numOr(cfg.bandTank, 2);
-  const bh = numOr(cfg.bandHx, 5);
-  const da = numOr(cfg.disturbAt, 300);
-  const dm = numOr(cfg.disturbMv, 3);
-  const dd = numOr(cfg.disturbDelta, -20);
+  if (!engine) return { status: 'failed', error: '会话不存在' };
+  const settings = opts.settings || snapshots.getSettings();
+  const effective = effectiveScoreConfig(settings, engine.modelId);
+  const identity = { model: engine.modelId, classId: engine.classId, studentId: engine.studentId, revision: effective.revision };
+  if (!opts.force && (engine.lastState?.score?.active || engine.lastState?.score?.finished || engine.lastState?.running)) {
+    engine.pendingScoreConfigRevision = effective.revision;
+    return { ...identity, status: 'pending', message: '下一轮评分生效' };
+  }
   try {
-    await engine.send(`SCORE_CFG ${du} ${ds} ${bt} ${bh} ${da} ${dm} ${dd}`);
-    if (isHx) {
-      const spHx = numOr(cfg.spHx, 400);
-      await engine.send(`SET_PVX_SP 0 ${spHx}`);
-      const initTemp = numOr(cfg.initTempHx, NaN);
-      const cold = !(engine.lastState && engine.lastState.running);
-      if (applyInitTemp && cold && Number.isFinite(initTemp) && initTemp > 100 && initTemp < 700) {
-        await engine.send(`SET_INIT_TEMP ${initTemp}`);
-      }
-    } else {
-      await engine.send(`SET_SP 0 ${numOr(cfg.sp1, 50)}`);
-      await engine.send(`SET_SP 1 ${numOr(cfg.sp2, 50)}`);
-      await engine.send(`SET_SP 2 ${numOr(cfg.sp3, 50)}`);
+    if (!engine.lastState?.running) {
+      await engine.send(`SCORE_MODE ${effective.mode}`);
+      await engine.send(`SCORE_TANK ${effective.tank}`);
     }
+    await engine.send(`SCORE_CFG ${effective.durationUnit} ${effective.durationSystem} ${effective.bandTank} ${effective.bandHx} ${effective.disturbAt} ${effective.disturbMv} ${effective.disturbDelta}`);
+    const policy = require('./models').modelSpec(engine.modelId).scorePolicy;
+    if (policy.initCommand && opts.applyInitTemp !== false && !engine.lastState?.running) await engine.send(`${policy.initCommand} ${effective.initTempHx}`);
+    for (let i = 0; i < effective.targets.length; i++) await engine.send(`${policy.targetCommand} ${i} ${effective.targets[i]}`);
+    engine.appliedScoreConfig = effective;
+    engine.pendingScoreConfigRevision = null;
+    return { ...identity, status: 'applied' };
   } catch (err) {
-    console.error(`apply score config failed: ${err.message}`);
+    return { ...identity, status: 'failed', error: err.message };
   }
 }
 
 async function applyScoreConfigToAll(patchScoreConfig, opts = {}) {
-  const cfg = patchScoreConfig || scoreConfigFromSettings();
-  if (!cfg) return;
+  const results = [];
+  const settings = snapshots.getSettings();
   for (const engine of enginesByKey.values()) {
     if (!engine || engine.closed) continue;
-    await applyScoreConfigToEngine(engine, cfg, opts);
+    results.push(await applyScoreConfigToEngine(engine, settings.scoreConfig, { ...opts, settings }));
   }
+  return results;
 }
 
 async function applyHxInitTempToEngine(engine) {
@@ -643,6 +640,7 @@ async function login(req, res, body) {
     attachEngine(engine);
     enginesByKey.set(teacherKey, engine);
     await engine.start();
+    await applyScoreConfigToEngine(engine, scoreConfigFromSettings());
 
     const token = makeToken();
     const auth = {
@@ -715,7 +713,8 @@ async function login(req, res, body) {
   attachEngine(engine);
   enginesByKey.set(key, engine);
   await engine.start();
-  applyScoreConfigToEngine(engine, scoreConfigFromSettings(), { applyInitTemp: true }).catch(() => {});
+  const application = await applyScoreConfigToEngine(engine, scoreConfigFromSettings(), { applyInitTemp: true });
+  if (application.status === 'failed') throw Object.assign(new Error(application.error), { statusCode: 503, code: 'CONFIG_APPLY_FAILED' });
 
   const token = makeToken();
   const auth = {
@@ -851,7 +850,7 @@ async function ensureTeacherEngine(modelId) {
   attachEngine(engine);
   enginesByKey.set(key, engine);
   await engine.start();
-  applyScoreConfigToEngine(engine, scoreConfigFromSettings(), { applyInitTemp: true }).catch(() => {});
+  await applyScoreConfigToEngine(engine, scoreConfigFromSettings(), { applyInitTemp: true });
   return engine;
 }
 
@@ -1549,12 +1548,9 @@ async function mainHandler(req, res) {
       broadcastStudentSettings();
       // 教师点了「应用评分要求」才带 scoreConfig；此时把细则发给全部在线会话。
       // 初始温度只改冷态，避免覆盖学生实验中的 TI1103。
-      if (body.scoreConfig && typeof body.scoreConfig === 'object') {
-        try {
-          await applyScoreConfigToAll(body.scoreConfig, { applyInitTemp: true });
-        } catch (err) { console.error(err.message); }
-      }
-      return sendJson(res, 200, { ok: true, settings });
+      const applications = ('scoreConfig' in body || 'scoreSystemOn' in body)
+        ? await applyScoreConfigToAll(settings.scoreConfig, { applyInitTemp: true }) : [];
+      return sendJson(res, 200, { ok: !applications.some(item => item.status === 'failed'), settings, applications });
     }
     if (req.method === 'POST' && teacherBase && parts.length === 3 && parts[2] === 'load-submission') {
       const auth = requireRole(req, res, 'teacher');

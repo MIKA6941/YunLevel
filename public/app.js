@@ -3813,6 +3813,7 @@ function wireStudentControls() {
       el.disabled = !!on;
     });
   };
+  app.refreshScoreConfigLock = refreshScoreConfigLock;
   if (scoreSystemToggle) {
     scoreSystemToggle.onclick = async () => {
       try {
@@ -3821,8 +3822,7 @@ function wireStudentControls() {
         const ret = await api('/api/teacher/settings', { method: 'POST', body: JSON.stringify(body) });
         if (ret && ret.settings) app.cloudSettings = ret.settings;
         app.cloudSettings = Object.assign({}, app.cloudSettings || {}, body);
-        if (next) await sendCommand('SCORE_MODE 1');
-        else await sendCommand('SCORE_MODE 0');
+
         refreshScoreConfigLock();
         toast(next ? '评分系统已开启，细则已锁定' : '评分系统已关闭，可修改评分细则');
       } catch (e) { toast(e.message, true); }
@@ -3832,6 +3832,7 @@ function wireStudentControls() {
   api('/api/projects').then((st) => {
     if (st && st.settings) {
       app.cloudSettings = st.settings;
+      populateScoreConfig(st.settings);
       refreshScoreConfigLock();
     }
   }).catch(() => refreshScoreConfigLock());
@@ -3926,9 +3927,11 @@ function wireStudentControls() {
         const sBandTank = Number($('sysBandTank')?.value || bt);
         const sBandHx = Number($('sysBandHx')?.value || bh);
         const initTempHx = Number($('scoreInitTempHx')?.value || 400);
-        await api('/api/teacher/settings', { method: 'POST', body: JSON.stringify({
+        const result = await api('/api/teacher/settings', { method: 'POST', body: JSON.stringify({
           scoreConfig: {
-            initTempHx,
+            initTempHx, modeTank: app.scoreObj === 'tank' ? (app.scoreMode === 'sys' ? 2 : 1) : (app.cloudSettings.scoreConfig?.modeTank || 1),
+            modeHx: app.scoreObj === 'hx' ? (app.scoreMode === 'sys' ? 2 : 1) : (app.cloudSettings.scoreConfig?.modeHx || 1),
+            tankIndex: Number($('scoreTankPick')?.value ?? 2),
             durationUnit: du, durationSystem: ds,
             bandTank: uBandTank, bandHx: uBandHx,
             sysBandTank: sBandTank, sysBandHx: sBandHx,
@@ -3937,27 +3940,14 @@ function wireStudentControls() {
             sysSp1: sSp1, sysSp2: sSp2, sysSp3: sSp3, sysSpHx: sSpHx,
           },
         })});
-        // SCORE_CFG：单对象限时/带宽 + 系统限时/系统带宽（扰动）
-        await sendCommand(`SCORE_CFG ${du} ${ds} ${uBandTank} ${uBandHx} ${da} ${dm} ${dd}`);
-        // 当前若为系统模式，再下发系统 SP/带宽；否则下发单对象 SP/带宽
-        const modeNow = Number(app.state?.score?.mode || app.state?.scoreMode || 0);
-        if (modeNow === 2) {
-          await sendCommand(`SCORE_CFG ${du} ${ds} ${sBandTank} ${sBandHx} ${da} ${dm} ${dd}`);
-          await sendCommand(`SET_SP 0 ${sSp1}`);
-          await sendCommand(`SET_SP 1 ${sSp2}`);
-          await sendCommand(`SET_SP 2 ${sSp3}`);
-          await sendCommand(`SET_PVX_SP 0 ${sSpHx}`);
-          const initTemp2 = Number($('scoreInitTempHx')?.value || 400);
-          await sendCommand(`SET_INIT_TEMP ${initTemp2}`);
-        } else {
-          await sendCommand(`SET_SP 0 ${uSp1}`);
-          await sendCommand(`SET_SP 1 ${uSp2}`);
-          await sendCommand(`SET_SP 2 ${uSp3}`);
-          await sendCommand(`SET_PVX_SP 0 ${uSpHx}`);
-        const initTemp = Number($('scoreInitTempHx')?.value || 400);
-        await sendCommand(`SET_INIT_TEMP ${initTemp}`);
-        }
-        toast('单对象 / 系统 评分配置已应用');
+        app.cloudSettings = result.settings;
+        populateScoreConfig(result.settings);
+        const failed = (result.applications || []).filter(item => item.status === 'failed').length;
+        const pending = (result.applications || []).filter(item => item.status === 'pending').length;
+        const snapshot = await api('/api/state');
+        updateState(snapshot.state || snapshot);
+        toast(failed ? '配置已保存，' + failed + ' 个会话应用失败，请重试' : pending ? '配置已保存，' + pending + ' 个会话下一轮生效' : '评分配置已保存并应用', !!failed);
+
       } catch (e) { toast(e.message, true); }
     };
   }
@@ -4024,6 +4014,24 @@ function wireStudentControls() {
       if (app.view === 'curves') scheduleStudentCharts();
     };
   }
+}
+
+function populateScoreConfig(settings) {
+  const cfg = settings?.scoreConfig || {};
+  const fields = { durationUnit: 'scoreDurUnit', durationSystem: 'scoreDurSys', bandTank: 'scoreBandTank',
+    bandHx: 'scoreBandHx', sysBandTank: 'sysBandTank', sysBandHx: 'sysBandHx',
+    disturbAt: 'scoreDistAt', disturbMv: 'scoreDistMv', disturbDelta: 'scoreDistDelta',
+    sp1: 'scoreSp1', sp2: 'scoreSp2', sp3: 'scoreSp3', spHx: 'scoreSpHx',
+    sysSp1: 'sysSp1', sysSp2: 'sysSp2', sysSp3: 'sysSp3', sysSpHx: 'sysSpHx', initTempHx: 'scoreInitTempHx' };
+  for (const [field,id] of Object.entries(fields)) {
+    const el = $(id);
+    if (el && document.activeElement !== el && el.dataset.dirty !== '1' && cfg[field] !== undefined) el.value = String(cfg[field]);
+  }
+  const tank = $('scoreTankPick');
+  if (tank) tank.value = String(cfg.tankIndex ?? 2);
+  const sp = $('scoreSpTank');
+  if (sp && document.activeElement !== sp) sp.value = String(cfg[`sp${Number(tank?.value || 0) + 1}`] ?? 50);
+  app.refreshScoreConfigLock?.();
 }
 
 function wireProjectControls() {
