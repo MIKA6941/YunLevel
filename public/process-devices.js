@@ -160,6 +160,7 @@
           const control = doc.createElement('input'); control.type = field.source.type;
           control.setAttribute('aria-label', [field.group,field.label].filter(Boolean).join(' '));
           control.dataset.deviceField = field.key; control.setAttribute('inputmode', 'decimal');
+          control.name = `device-${field.key}`; control.autocomplete = 'off';
           if (field.source.step) control.step = field.source.step;
           label.append(control); wrap.append(label); grid.append(wrap);
           const range = doc.createElement('input'); range.type = 'range'; range.setAttribute('aria-label', field.label + '滑块');
@@ -343,7 +344,7 @@
         const next = all[all.indexOf(anchor) + 1];
         if (next) { event.preventDefault(); close(); next.focus(); }
       }
-    });
+    }, true);
     doc.addEventListener('pointerdown', event => {
       if (active && !panel.contains(event.target) && !event.target.closest?.('[data-process-device]')) close();
     }, true);
