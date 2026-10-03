@@ -23,6 +23,7 @@ const {
 } = require('./models');
 const { buildZip } = require('./zip-builder');
 const { effectiveScoreConfig } = require('./score-config');
+const { commandPermission } = require('./command-policy');
 
 ensureDir(config.dataDir);
 ensureDir(config.stateDir);
@@ -414,11 +415,15 @@ function broadcastOverview() {
 function appendScoreRecord(engine) {
   const state = engine.lastState || {};
   const score = state.score || {};
-  const key = `${engine.sessionKey}:${score.sessionT}:${score.total}`;
+  const key = engine.currentAttempt?.id || `${engine.sessionKey}:${score.sessionT}:${score.total}`;
   if (engine.lastRecordKey === key) return;
   engine.lastRecordKey = key;
   const record = {
     endedAt: new Date().toISOString(),
+    attemptId: engine.currentAttempt?.id || null,
+    configRevision: engine.currentAttempt?.revision ?? null,
+    effectiveConfig: engine.currentAttempt?.config || null,
+    endReason: engine.currentAttempt?.endReason || 'completed',
     modelId: engine.modelId,
     classId: engine.classId,
     studentId: engine.studentId,
@@ -454,6 +459,7 @@ function recordsCsv(classId = '', modelId = '') {
     [
       '结束时间', '实验模型', '班级', '学号', '姓名', '评分模式', '评分对象', '评分时间(s)',
       '总分', '操作', '控制', '安全', '收益', '流量平衡', '效率',
+      '评分编号', '配置版本', '结束原因',
     ].join(','),
   ];
   const filter = String(classId || '');
@@ -467,6 +473,7 @@ function recordsCsv(classId = '', modelId = '') {
       r.endedAt, modelDisplayName(recordModel(r)), r.className, r.studentId, r.name, r.mode, r.tank, r.scoreTime,
       r.score.total, r.score.operation, r.score.control, r.score.safety,
       r.score.benefit, r.score.flowBalance, r.score.efficiency,
+      r.attemptId || '', r.configRevision ?? '', r.endReason || 'completed',
     ].map(csvCell).join(','));
   }
   return `${BOM}${lines.join(LF)}${LF}`;
@@ -506,7 +513,7 @@ async function applyScoreConfigToEngine(engine, cfg, opts = {}) {
   const settings = opts.settings || snapshots.getSettings();
   const effective = effectiveScoreConfig(settings, engine.modelId);
   const identity = { model: engine.modelId, classId: engine.classId, studentId: engine.studentId, revision: effective.revision };
-  if (!opts.force && (engine.lastState?.score?.active || engine.lastState?.score?.finished || engine.lastState?.running)) {
+  if (!opts.force && (engine.lastState?.score?.active || engine.lastState?.score?.finished)) {
     engine.pendingScoreConfigRevision = effective.revision;
     return { ...identity, status: 'pending', message: '下一轮评分生效' };
   }
@@ -552,6 +559,12 @@ async function applyHxInitTempToEngine(engine) {
 
 function attachEngine(engine) {
   engine.on('state', (state) => {
+    if (state.score) {
+      state.score.attemptId = engine.currentAttempt?.id || null;
+      state.score.configRevision = engine.currentAttempt?.revision ?? engine.appliedScoreConfig?.revision ?? null;
+      state.score.endReason = engine.currentAttempt?.endReason || (state.score.finished ? 'completed' : null);
+      state.score.effectiveConfig = engine.currentAttempt?.config || engine.appliedScoreConfig || null;
+    }
     engine.appendHistory(state);
     broadcastToStudent(engine, 'state', state);
     broadcastToTeacherStudentWatchers(engine, state);
@@ -744,19 +757,44 @@ async function login(req, res, body) {
 async function handleCommand(req, res, auth, body, options = {}) {
   const cmd = String(body.cmd || '').trim();
   const engine = options.studentTarget
-    ? enginesByKey.get(sessionKeyFor(body.classId, body.studentId, auth.modelId))
+    ? enginesByKey.get(sessionKeyFor(body.classId, body.studentId, body.model || auth.modelId))
     : engineForAuth(auth);
   if (!engine) return sendJson(res, 404, { error: '没有正在运行的会话' });
   const commandPattern = new RegExp('^[A-Z_]+(?: (?:[A-Za-z_]+|[0-9eE+.-]+))*$');
   if (!commandPattern.test(cmd)) {
     return sendJson(res, 400, { error: '非法控制命令' });
   }
+  const name = cmd.split(' ')[0];
+  const allowed = commandPermission(auth.role, name);
+  if (allowed === null) return sendJson(res, 400, { code: 'UNKNOWN_COMMAND', error: '未知控制命令' });
+  if (!allowed) return sendJson(res, 403, { code: 'COMMAND_FORBIDDEN', error: '此命令只能由教师或服务器执行' });
   try {
+    if (engine.lastState?.score?.active && ['SET_MODE','SCORE_CFG','SCORE_MODE','SCORE_TANK','SCORE_OBJECT','SET_SP','SET_FLOW_SP','SET_PVX_SP','SET_INIT_TEMP','PRESET','HIGH_SCORE','TEMPLATE_A','TEMPLATE_B','SCENARIO'].includes(name)) {
+      throw Object.assign(new Error('本轮评分采用开始时的规则，请下一轮再修改'), { statusCode: 409, code: 'ASSESSMENT_LOCKED' });
+    }
+    if (name === 'SCORE_START' && engine.ownerRole === 'student') {
+      if (engine.lastState?.running || Number(engine.lastState?.sim_time || 0) !== 0 || engine.lastState?.score?.active) {
+        throw Object.assign(new Error('请先回到冷态，再开始评分'), { statusCode: 409, code: 'SCORE_START_NOT_COLD' });
+      }
+      if (!snapshots.getSettings().scoreSystemOn) throw Object.assign(new Error('教师尚未开启评分系统'), { statusCode: 409, code: 'SCORING_DISABLED' });
+      const applied = await applyScoreConfigToEngine(engine, null, { force: true });
+      if (applied.status !== 'applied') throw Object.assign(new Error(applied.error), { statusCode: 503, code: 'CONFIG_APPLY_FAILED' });
+      engine.currentAttempt = { id: crypto.randomUUID(), revision: engine.appliedScoreConfig.revision,
+        config: { ...engine.appliedScoreConfig }, startedAt: new Date().toISOString() };
+    }
     const state = await engine.send(cmd);
-    return sendJson(res, 200, { ok: true, state });
+    if (engine.ownerRole === 'student' && ['RESET','SET_MODE'].includes(name)) {
+      engine.currentAttempt = null;
+      await applyScoreConfigToEngine(engine, null, { force: true });
+    } else if (engine.ownerRole === 'student' && name === 'SET_INLET_TEMP') {
+      const policy = require('./models').modelSpec(engine.modelId).scorePolicy;
+      const cfg = engine.currentAttempt?.config || engine.appliedScoreConfig;
+      if (cfg) for (let i = 0; i < cfg.targets.length; i++) await engine.send(`${policy.targetCommand} ${i} ${cfg.targets[i]}`);
+    }
+    return sendJson(res, 200, { ok: true, state: engine.lastState || state });
   } catch (err) {
     if (err.code) {
-      return sendJson(res, 400, { ok: false, code: err.code, error: err.message || '控制命令被拒绝' });
+      return sendJson(res, err.statusCode || 400, { ok: false, code: err.code, error: err.message || '控制命令被拒绝' });
     }
     return sendJson(res, 500, { ok: false, error: err.message || '控制命令失败' });
   }
@@ -773,6 +811,7 @@ function studentProjectStatus(auth) {
 }
 
 async function restoreStudentProject(auth, slot, reason = 'restore-project') {
+  assertStudentRestoreAllowed(auth);
   const project = storeFor(auth.modelId).getProject(auth.classId, auth.studentId, slot);
   if (!project) throw Object.assign(new Error('该云端方案还没有保存内容'), { statusCode: 404 });
   const classInfo = roster.findClassById(auth.classId);
@@ -786,10 +825,12 @@ async function restoreStudentProject(auth, slot, reason = 'restore-project') {
   enginesByKey.set(auth.sessionKey, engine);
   await engine.start();
   await engine.send('DEACTIVATE', 4000);
+  await prepareStudentRestore(engine);
   return { state: engine.lastState, history: engine.history, project: project.meta, reason };
 }
 
 async function restoreStudentRecovery(auth) {
+  assertStudentRestoreAllowed(auth);
   const recovery = storeFor(auth.modelId).getRecovery(auth.classId, auth.studentId);
   if (!recovery) throw Object.assign(new Error('没有可恢复的自动保存记录'), { statusCode: 404 });
   const classInfo = roster.findClassById(auth.classId);
@@ -803,10 +844,12 @@ async function restoreStudentRecovery(auth) {
   enginesByKey.set(auth.sessionKey, engine);
   await engine.start();
   await engine.send('DEACTIVATE', 4000);
+  await prepareStudentRestore(engine);
   return { state: engine.lastState, history: engine.history, recovery: recovery.meta };
 }
 
 async function restoreOwnCurrent(auth) {
+  if (auth.role === 'student') assertStudentRestoreAllowed(auth);
   const current = storeFor(auth.modelId).getCurrent(auth.classId, auth.studentId);
   if (!current) throw Object.assign(new Error('还没有保存当前状态'), { statusCode: 404 });
   if (auth.role === 'teacher') {
@@ -837,7 +880,21 @@ async function restoreOwnCurrent(auth) {
   enginesByKey.set(auth.sessionKey, engine);
   await engine.start();
   await engine.send('DEACTIVATE', 4000);
+  await prepareStudentRestore(engine);
   return { state: engine.lastState, history: engine.history, current: current.meta };
+}
+
+function assertStudentRestoreAllowed(auth) {
+  if (engineForAuth(auth)?.lastState?.score?.active) {
+    throw Object.assign(new Error('评分进行中不能恢复方案'), { statusCode: 409, code: 'ASSESSMENT_LOCKED' });
+  }
+}
+async function prepareStudentRestore(engine) {
+  await engine.send('SCORE_END');
+  await engine.send('RESET');
+  engine.currentAttempt = null;
+  const result = await applyScoreConfigToEngine(engine, null, { force: true });
+  if (result.status === 'failed') throw Object.assign(new Error(result.error), { statusCode: 503, code: 'CONFIG_APPLY_FAILED' });
 }
 
 // 教师端跨模型：按需为某个模型起教师仿真会话。
@@ -1289,6 +1346,7 @@ async function mainHandler(req, res) {
     if (req.method === 'POST' && pathname === '/api/current/import') {
       const auth = requireSimulationRole(req, res);
       if (!auth) return;
+      if (auth.role === 'student') return sendJson(res, 403, { code: 'IMPORT_FORBIDDEN', error: '学生不能导入外部工程' });
       const engine = engineForAuth(auth);
       const body = await readBody(req, 8 * 1024 * 1024);
       const current = storeFor(auth.modelId).importProjectToCurrent(body.project, engine, 'imported-current');
@@ -1322,6 +1380,7 @@ async function mainHandler(req, res) {
     if (req.method === 'POST' && pathname === '/api/projects/import') {
       const auth = requireSimulationRole(req, res);
       if (!auth) return;
+      if (auth.role === 'student') return sendJson(res, 403, { code: 'IMPORT_FORBIDDEN', error: '学生不能导入外部工程' });
       const engine = engineForAuth(auth);
       const body = await readBody(req, 8 * 1024 * 1024);
       const project = await storeFor(auth.modelId).importProjectToSlot(body.project, engine, body.slot || 1, 'imported');

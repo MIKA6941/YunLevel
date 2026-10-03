@@ -1190,6 +1190,7 @@ function updateState(state) {
   updateScoreTabAccess();
   renderStudentCloudStatus();
   if (app.view === 'curves') scheduleStudentCharts();
+  syncStudentRuleAccess();
 }
 
 function syncSchemeControls(state) {
@@ -1525,7 +1526,7 @@ async function applyLoop(index) {
   const loop = app.state?.loops?.[index];
   if (!loop) return;
   const form = readLoopForm(index);
-  if (Number(loop.sp) !== form.sp) await sendCommand(`SET_SP ${loop.pv} ${form.sp}`);
+  if (app.me?.role === 'teacher' && Number(loop.sp) !== form.sp) await sendCommand(`SET_SP ${loop.pv} ${form.sp}`);
   await sendCommand(`SET_PID loop ${index} ${form.kp} ${form.ti} ${form.td} ${loop.action} ${loop.manual ? 1 : 0} ${form.manualOut}`);
   clearLoopDirty(index);
   toast('参数已应用');
@@ -1545,7 +1546,7 @@ async function applyCascade(index) {
   const c = app.state?.cascades?.[index];
   if (!c) return;
   const form = readCascadeForm(index);
-  if (Number(c.outerSp) !== form.outerSp) await sendCommand(`SET_PVX_SP ${c.outer} ${form.outerSp}`);
+  if (app.me?.role === 'teacher' && Number(c.outerSp) !== form.outerSp) await sendCommand(`SET_PVX_SP ${c.outer} ${form.outerSp}`);
   await sendCommand(`SET_PID outer ${index} ${form.outerKp} ${form.outerTi} ${form.outerTd} ${c.outerAction} ${c.outerManual ? 1 : 0} ${c.outerOut}`);
   await sendCommand(`SET_PID inner ${index} ${form.innerKp} ${form.innerTi} ${form.innerTd} ${c.innerAction} ${c.innerManual ? 1 : 0} ${c.innerOut}`);
   clearCascadeDirty(index);
@@ -1967,6 +1968,12 @@ function renderScore(state) {
     ? `评分时间 ${number(s.sessionT, 0)} s`
     : (s.finished ? '评分已结束，可查看结果。' : (mode ? '评分方案已选择，点击“开始评分”后开始计时。' : '请先选择评分方案，再点击“开始评分”。'));
   $('scoreTotal').textContent = number(s.total, 1);
+  if (app.me?.role === 'student' && s.effectiveConfig) {
+    const c = s.effectiveConfig;
+    const duration = c.mode === 2 ? c.durationSystem : c.durationUnit;
+    const target = c.targets?.[c.tank] ?? c.targets?.[0];
+    $('scoreSubtitle').textContent += ` 教师规则 v${s.configRevision}：${duration} s，目标 ${target}，带宽 ${app.modelId === 'hx' ? c.bandHx : c.bandTank}。`;
+  }
   $('scoreOp').textContent = number(s.operation, 1);
   $('scoreCtrl').textContent = number(s.control, 1);
   { const el = $('scoreTarget'); if (el) el.textContent = number(s.target, 1); }
@@ -3050,7 +3057,9 @@ async function connectStudent() {
   app.simEventSource.addEventListener('open', () => setConnection(true, '已连接'));
   app.simEventSource.addEventListener('settings', (e) => {
     app.cloudSettings = JSON.parse(e.data);
+    populateScoreConfig(app.cloudSettings);
     renderStudentCloudStatus();
+    syncStudentRuleAccess();
   });
   app.simEventSource.addEventListener('state', (e) => {
     const state = JSON.parse(e.data);
@@ -4352,3 +4361,11 @@ function wireLogin() {
     showLogin('');
   }
 })();
+
+function syncStudentRuleAccess() {
+  if (app.me?.role !== 'student') return;
+  document.querySelectorAll('[data-field="sp"], [data-field="outerSp"]').forEach(el => { el.readOnly = true; el.title = '目标由教师设定'; });
+  document.querySelectorAll('#scoreOffBtn, #scoreTankBtn, #scoreSystemBtn, [data-score-tank]').forEach(el => { el.disabled = true; el.title = '评分方案由教师设定'; });
+  const start = $('scoreStartBtn');
+  if (start) { start.disabled = !app.cloudSettings.scoreSystemOn || !!app.state?.score?.active; start.title = '按教师规则开始新一轮评分'; }
+}

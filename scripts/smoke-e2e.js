@@ -124,6 +124,15 @@ function cmdHx(cmdText) {
   return cmdAs(state.hxStudent, cmdText);
 }
 
+async function advanceStudent(model, count) {
+  for (let i = 0; i < count; i++) {
+    const result = await api('/api/teacher/command/' + state.classId + '/' + STUDENT_ID, {
+      method: 'POST', cookie: state.teacher, body: { cmd: 'TICK 1', model },
+    });
+    if (result.status !== 200) throw new Error('teacher advance failed: ' + result.text);
+  }
+}
+
 function st(res) {
   return res && res.json && res.json.state ? res.json.state : null;
 }
@@ -272,7 +281,7 @@ async function main() {
     const modeRun = await cmd('SET_MODE 1');
     check('mode switch blocked while running', modeRun.status === 400 && modeRun.json && modeRun.json.code === 'MODE_RUNNING', modeRun.text.slice(0, 160));
 
-    for (let i = 0; i < 20; i++) await cmd('TICK 1');
+    await advanceStudent('tank', 20);
 
     const hist = await api('/api/history', { cookie: state.student });
     check('history endpoint 200', hist.status === 200, 'status ' + hist.status);
@@ -296,8 +305,11 @@ async function main() {
     check('PAUSE toggles', st(paused) && st(paused).paused === true, paused.text.slice(0, 160));
 
     section('project save / restore / export');
-    const setSp = await cmd('SET_SP 2 45');
-    check('SET_SP accepted', setSp.status === 200, setSp.text.slice(0, 160));
+    const forbiddenSp = await cmd('SET_SP 2 45');
+    check('student cannot change teacher SP', forbiddenSp.status === 403, forbiddenSp.text);
+    await api('/api/teacher/settings', { method: 'POST', cookie: state.teacher, body: { scoreConfig: { sp3: 45 } } });
+    const setSp = await cmd('STATE');
+    check('teacher SP applied', setSp.status === 200, setSp.text.slice(0, 160));
     check('SET_SP writes the indexed tank (0-based)', !!st(setSp) && Math.abs(Number(st(setSp).sp3) - 45) < 1e-6, 'sp3 ' + (st(setSp) && st(setSp).sp3));
 
     const cur = await api('/api/current/save', { method: 'POST', cookie: state.student, body: {} });
@@ -360,26 +372,26 @@ async function main() {
 
     section('score');
     const notCold = await cmd('SCORE_START 1');
-    check('score refused while not cold', notCold.status === 400 && notCold.json && notCold.json.code === 'SCORE_START_NOT_COLD', notCold.text.slice(0, 160));
+    check('score refused while not cold', notCold.status === 409 && notCold.json && notCold.json.code === 'SCORE_START_NOT_COLD', notCold.text.slice(0, 160));
 
     const reset = await cmd('RESET');
     check('RESET returns to cold', reset.status === 200 && Number(st(reset).sim_time) === 0, reset.text.slice(0, 160));
 
     const noMode = await cmd('SCORE_START 1');
-    check('score refused without a plan', noMode.status === 400 && noMode.json && noMode.json.code === 'SCORE_START_MODE_REQUIRED', noMode.text.slice(0, 160));
+    check('score refused without a plan', noMode.status === 409 && noMode.json && noMode.json.code === 'SCORING_DISABLED', noMode.text.slice(0, 160));
 
-    const scoreMode = await cmd('SCORE_MODE 1');
+    const scoreMode = await api('/api/teacher/settings', { method: 'POST', cookie: state.teacher, body: { scoreSystemOn: true, scoreConfig: { modeTank: 1 } } });
     check('SCORE_MODE 1 accepted', scoreMode.status === 200, scoreMode.text.slice(0, 160));
-    const scoreMode2 = await cmd('SCORE_MODE 2');
+    const scoreMode2 = await api('/api/teacher/settings', { method: 'POST', cookie: state.teacher, body: { scoreConfig: { modeTank: 2 } } });
     check('SCORE_MODE 2 accepted', scoreMode2.status === 200, scoreMode2.text.slice(0, 160));
-    const scoreTank = await cmd('SCORE_TANK 1');
+    const scoreTank = await api('/api/teacher/settings', { method: 'POST', cookie: state.teacher, body: { scoreConfig: { tankIndex: 1 } } });
     check('SCORE_TANK 1 accepted', scoreTank.status === 200, scoreTank.text.slice(0, 160));
     const scoreStart = await cmd('SCORE_START 1');
     check('SCORE_START accepted in cold state', scoreStart.status === 200, scoreStart.text.slice(0, 160));
     check('score active', !!(st(scoreStart) && st(scoreStart).score) && st(scoreStart).score.active === true, JSON.stringify(st(scoreStart) && st(scoreStart).score));
     check('score plan selected', !!(st(scoreStart) && st(scoreStart).score) && Number(st(scoreStart).score.mode) === 2, JSON.stringify(st(scoreStart) && st(scoreStart).score && st(scoreStart).score.mode));
 
-    for (let i = 0; i < 10; i++) await cmd('TICK 1');
+    await advanceStudent('tank', 10);
     const scored = await cmd('STATE');
     check('score clock runs', !!(st(scored) && st(scored).score) && Number(st(scored).score.sessionT) > 0, JSON.stringify(st(scored) && st(scored).score && st(scored).score.sessionT));
 
@@ -452,7 +464,7 @@ async function main() {
 
     const hxStart = await cmdHx('START');
     check('hx START accepted', hxStart.status === 200 && st(hxStart).running === true, hxStart.text.slice(0, 160));
-    for (let i = 0; i < 10; i++) await cmdHx('TICK 1');
+    await advanceStudent('hx', 10);
     hxState = await api('/api/state', { cookie: state.hxStudent });
     check('hx simulation advances', Number(hxState.json.state.sim_time) >= 10, 'sim_time ' + (hxState.json.state && hxState.json.state.sim_time));
     check('hx outlet temperature reacts', Number(hxState.json.state.ti1104) > 0, 'ti1104 ' + (hxState.json.state && hxState.json.state.ti1104));
