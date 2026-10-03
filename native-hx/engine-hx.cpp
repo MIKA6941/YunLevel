@@ -642,6 +642,7 @@ void process_line(const std::string& line) {
             state_changed = true;
         } else {
             emit_error("INIT_TEMP_RUNNING", "请先回到冷态，再改初始温度");
+            return;
         }
     } else if (cmd == "SET_INLET_TEMP") {
         double t = 400.0;

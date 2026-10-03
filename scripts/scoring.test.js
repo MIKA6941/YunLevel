@@ -55,6 +55,16 @@ test('HX finishes each mode at its own default and custom deadline', async () =>
   }
 });
 module.exports = { withEngine };
+test('HX rejected initialization produces one reply and the next command remains synchronized', async () => {
+  await withEngine('hx', async e => {
+    await e.send('START');
+    await assert.rejects(e.send('SET_INIT_TEMP 450'), { code: 'INIT_TEMP_RUNNING' });
+    const state = await e.send('STATE');
+    assert.equal(state.type, 'state');
+    assert.equal(state.running, true);
+    assert.equal(e.failure, null);
+  });
+});
 test('gateway-only finish preserves elapsed time and emits one frozen zero result in both kernels', async () => {
   for (const model of ['tank', 'hx']) await withEngine(model, async e => {
     await e.send('SCORE_MODE 1');

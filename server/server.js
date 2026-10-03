@@ -77,7 +77,10 @@ function persistAttempt(engine) {
   writeJsonAtomic(attemptsFile, activeAttempts);
 }
 function runEngineOperation(engine, operation) {
-  const next = (engine.operations || Promise.resolve()).then(operation);
+  if ((engine.waitingOperations || 0) >= 64) return Promise.reject(Object.assign(new Error('内核等待队列已满（64）'), { code: 'ENGINE_BUSY', statusCode: 503 }));
+  engine.waitingOperations = (engine.waitingOperations || 0) + 1;
+  const invoke = () => { engine.waitingOperations--; return operation(); };
+  const next = (engine.operations || Promise.resolve()).then(invoke);
   engine.operations = next.catch(() => {});
   return next;
 }
@@ -503,12 +506,13 @@ async function endAuth(auth, reason) {
   auth.ending = (async () => {
     if (auth.role === 'teacher') return releaseTeacher(auth);
     const engine = engineForAuth(auth);
-    if (engine) await runEngineOperation(engine, async () => {
+    if (engine) {
+      await engine.operations;
       await finishStudentAttempt(engine, reason);
       try { await engine.send('DEACTIVATE'); await saveStudentRecovery(engine, reason); } catch {}
       stopEngine(engine, true);
       if (enginesByKey.get(auth.sessionKey) === engine) enginesByKey.delete(auth.sessionKey);
-    });
+    }
     for (const res of studentStreams.get(auth.sessionKey) || []) res.end();
     studentStreams.delete(auth.sessionKey);
     sessionsByToken.delete(auth.token);
