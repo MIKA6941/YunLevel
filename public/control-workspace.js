@@ -43,5 +43,24 @@
     return loops.map((value, index) => entry('loop', value, index))
       .concat(cascades.map((value, index) => entry('casc', value, index)));
   }
-  return { SelectionStore, entries };
+  function parameterPolicy(input) {
+    const label = input.label || '参数';
+    const field = (input.field || '').toLowerCase().replace(/^(outer|inner)/, '');
+    if (input.manual) {
+      const finite = (raw, fallback) => raw !== '' && raw != null && Number.isFinite(Number(raw)) ? Number(raw) : fallback;
+      const min = finite(input.min, 0);
+      const max = finite(input.max, 100);
+      const step = finite(input.step, 1);
+      return { label, min, max, step:step > 0 ? step : 1, hardMin:min, hardMax:max };
+    }
+    if (field === 'ti') return { label, min:0.1, max:1200, step:0.1, allowInfinity:true };
+    if (field === 'kp') return { label, min:0, max:10, step:0.01 };
+    if (field === 'td') return { label, min:0, max:300, step:0.1 };
+    if (field === 'sp') return label.includes('℃')
+      ? { label, min:250, max:650, step:0.1 }
+      : { label, min:0, max:100, step:0.1 };
+    if (field === 'manualout') return { label, min:0, max:100, step:0.1, hardMin:0, hardMax:100 };
+    return null;
+  }
+  return { SelectionStore, entries, parameterPolicy };
 });

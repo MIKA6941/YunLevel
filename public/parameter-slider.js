@@ -152,8 +152,9 @@
       const box = panel.getBoundingClientRect();
       const below = rect.bottom + 8;
       const above = rect.top - box.height - 8;
-      const preferred = below + box.height <= y + height - margin ? below
-        : above >= y + margin ? above
+      // Keep the apply buttons below the source available whenever there is room.
+      const preferred = above >= y + margin ? above
+        : below + box.height <= y + height - margin ? below
           : y + height - rect.bottom >= rect.top - y ? below : above;
       panel.style.left = clamp(rect.left, x + margin, Math.max(x + margin, x + width - box.width - margin)) + 'px';
       panel.style.top = clamp(preferred, y + margin, Math.max(y + margin, y + height - box.height - margin)) + 'px';

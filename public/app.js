@@ -1332,20 +1332,12 @@ function wireControlWorkspace() {
 }
 
 function parameterSliderPolicy(input) {
-  const label = input.closest('label')?.textContent.trim() || '参数';
-  const field = (input.dataset.field || '').toLowerCase().replace(/^(outer|inner)/, '');
-  if (field === 'ti') return { label, min:0.1, max:1200, step:0.1, allowInfinity:true };
-  if (field === 'kp') return { label, min:0, max:10, step:0.01 };
-  if (field === 'td') return { label, min:0, max:300, step:0.1 };
-  if (field === 'sp') {
-    return label.includes('℃')
-      ? { label, min:250, max:650, step:0.1 }
-      : { label, min:0, max:100, step:0.1 };
-  }
-  if (field === 'manualout' || input.closest('#manualControls')) {
-    return { label, min:0, max:100, step:0.1, hardMin:0, hardMax:100 };
-  }
-  return null;
+  return ControlWorkspace.parameterPolicy({
+    field:input.dataset.field,
+    label:input.closest('label')?.textContent.trim(),
+    manual:!!input.closest('#manualControls'),
+    min:input.min, max:input.max, step:input.step,
+  });
 }
 
 function setLoopCardInput(card, field, value) {
