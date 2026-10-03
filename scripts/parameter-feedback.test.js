@@ -130,3 +130,15 @@ test('destroyed feedback ignores late completion and cancels its existing confir
   assert.equal(f.confirmations.length, 0);
   assert.ok(f.cancellations.includes(previous));
 });
+test('scoped actions and mode changes never clear unrelated parameter drafts', async () => {
+  const f = feedbackFixture();
+  const output = input('37');
+  const result = await f.feedback.submit(f.button, async () => {}, { inputs:[output] });
+  assert.equal(result.ok, true);
+  assert.equal(output.dataset.dirty, undefined);
+  assert.equal(f.field.dataset.dirty, '1');
+  await f.feedback.submit(f.button, async () => {}, { inputs:[] });
+  assert.equal(f.field.dataset.dirty, '1');
+  assert.equal(f.output().dataset.phase, 'draft');
+  f.feedback.destroy();
+});

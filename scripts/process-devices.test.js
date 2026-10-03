@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { devices, related, reading, place } = require('../public/process-devices');
+const { devices, related, reading, place, hitBox, nearestHit } = require('../public/process-devices');
 const { entries } = require('../public/control-workspace');
 test('visible devices map to model-specific single and cascade loops without inventing HX instruments', () => {
   const tank = devices('tank'); const hx = devices('hx');
@@ -25,4 +25,19 @@ test('device cards avoid the desktop edges and respect a shifted visual viewport
   assert.equal(result.top, 312);
   const keyboard = place({ left:30,right:70,top:50 }, { width:340,height:250 }, { width:1000,height:300,top:100 });
   assert.ok(keyboard.top >= 112 && keyboard.top + 250 <= 388);
+});
+test('device targets remain 44 screen pixels at fit/zoom while keeping their visual centers', () => {
+  for (const model of ['tank','hx']) for (const device of devices(model)) for (const scale of [0.15,0.3,0.55,1,1.8]) {
+    const box = hitBox(device, scale), [x,y,w,h] = device.box;
+    assert.ok(box.width * scale >= 44 - 1e-8 && box.height * scale >= 44 - 1e-8);
+    assert.equal(box.x + box.width / 2, x + w / 2);
+    assert.ok(Math.abs(box.y + box.height / 2 - (y + h / 2)) < 1e-8);
+  }
+});
+test('overlapping small-scale hit regions select the nearest device instead of SVG paint order', () => {
+  const a = { node:'pump',rect:{ left:0,right:44,top:0,bottom:44 } };
+  const b = { node:'valve',rect:{ left:38,right:82,top:0,bottom:44 } };
+  assert.equal(nearestHit({ x:39,y:22 }, [b,a]), 'pump');
+  assert.equal(nearestHit({ x:43,y:22 }, [a,b]), 'valve');
+  assert.equal(nearestHit({ x:100,y:22 }, [a,b]), null);
 });

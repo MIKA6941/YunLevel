@@ -48,6 +48,17 @@
     return { left:Math.max(pad, Math.min(maxX, left)),
       top:viewport.top + Math.max(pad, Math.min(viewport.height - size.height - pad, anchor.top - viewport.top)) };
   }
+  function hitBox(device, scale) {
+    const [x,y,w,h] = device.box;
+    const minimum = 44 / (Number.isFinite(scale) && scale > 0 ? scale : 1);
+    const width = Math.max(w, minimum), height = Math.max(h, minimum);
+    return { x:x + (w - width) / 2,y:y + (h - height) / 2,width,height };
+  }
+  function nearestHit(point, candidates) {
+    return candidates.filter(item => point.x >= item.rect.left && point.x <= item.rect.right && point.y >= item.rect.top && point.y <= item.rect.bottom)
+      .sort((a,b) => Math.hypot(point.x - (a.rect.left + a.rect.right) / 2,point.y - (a.rect.top + a.rect.bottom) / 2)
+        - Math.hypot(point.x - (b.rect.left + b.rect.right) / 2,point.y - (b.rect.top + b.rect.bottom) / 2))[0]?.node || null;
+  }
   function bind(doc, options) {
     const view = doc.defaultView;
     const panel = doc.createElement('section');
@@ -59,14 +70,25 @@
       '<div class="device-reading"><span>当前测量值</span><strong></strong></div><p class="device-ownership"></p><div class="device-content"></div>';
     doc.body.append(panel);
     const nodes = [];
-    let active = null, gesture = null, bindings = [], contentSignature = '';
+    let active = null, gesture = null, bindings = [], contentSignature = '', tapped = null;
     function context() { return options.getContext(); }
     function close({ restoreFocus = false } = {}) {
       const previous = active;
       active = null; panel.hidden = true;
       options.motion?.cancel(panel.querySelector('.device-feedback'));
       nodes.forEach(node => node.setAttribute('aria-pressed', 'false'));
-      if (restoreFocus && previous?.anchor.isConnected) previous.anchor.focus({ preventScroll:true });
+      if (restoreFocus && previous?.anchor.isConnected) {
+        (nodes.find(node => node.dataset.deviceModel === previous.model && node.dataset.processDevice === previous.device.id) || previous.anchor).focus({ preventScroll:true });
+      }
+    }
+    function updateTargets() {
+      nodes.forEach(node => {
+        const model = node.dataset.deviceModel;
+        const device = devices(model).find(item => item.id === node.dataset.processDevice);
+        const matrix = node.ownerSVGElement.getScreenCTM();
+        const box = hitBox(device, Math.hypot(matrix?.a || 1,matrix?.b || 0));
+        Object.entries(box).forEach(([name,value]) => { if (Number(node.getAttribute(name)) !== value) node.setAttribute(name,value); });
+      });
     }
     function position() {
       if (!active) return;
@@ -128,17 +150,21 @@
             if (groupName) { const legend = doc.createElement('legend'); legend.textContent = groupName; group.append(legend); }
             grid = doc.createElement('div'); grid.className = 'device-fields'; group.append(grid); content.append(group);
           }
+          const wrap = doc.createElement('div'); wrap.className = 'device-field';
           const label = doc.createElement('label'); label.textContent = field.label;
           const control = doc.createElement('input'); control.type = field.source.type;
+          control.setAttribute('aria-label', [field.group,field.label].filter(Boolean).join(' '));
           control.dataset.deviceField = field.key; control.setAttribute('inputmode', 'decimal');
           if (field.source.step) control.step = field.source.step;
-          label.append(control); grid.append(label);
+          label.append(control); wrap.append(label); grid.append(wrap);
           const range = doc.createElement('input'); range.type = 'range'; range.setAttribute('aria-label', field.label + '滑块');
-          label.append(range);
+          wrap.append(range);
           let infinity;
           if (field.policy?.allowInfinity) {
             const check = doc.createElement('label'); check.className = 'device-infinity';
-            infinity = doc.createElement('input'); infinity.type = 'checkbox'; check.append(infinity, '关闭积分（inf）'); label.append(check);
+            infinity = doc.createElement('input'); infinity.type = 'checkbox';
+            infinity.setAttribute('aria-label', [field.group,'Ti 关闭积分'].filter(Boolean).join(' '));
+            check.append(infinity, '关闭积分（inf）'); wrap.append(check);
           }
           const binding = { key:field.key,control,range,infinity,source:field.source,memory:null };
           control.oninput = () => write(binding, control.value);
@@ -255,12 +281,26 @@
       }
     }
     const viewport = doc.querySelector('.process-viewport');
-    viewport?.addEventListener('simulation:activate', event => open(event.detail.target.closest?.('[data-process-device]')));
+    viewport?.addEventListener('simulation:activate', event => {
+      let node = event.detail.target.closest?.('[data-process-device]');
+      if (node?.classList.contains('device-hit') && Number.isFinite(event.detail.clientX)) {
+        node = nearestHit({ x:event.detail.clientX,y:event.detail.clientY }, nodes.filter(item => item.dataset.deviceModel === context().model)
+          .map(item => ({ node:item,rect:item.getBoundingClientRect() }))) || node;
+      } else node = tapped || node;
+      tapped = null; open(node);
+    });
     viewport?.addEventListener('simulation:panstart', () => close());
     // The standalone UI branch also works with the incumbent fullscreen pan handler.
     viewport?.addEventListener('pointerdown', event => {
-      if (viewport.dataset.simulationGestures === 'true' || event.button !== 0 || event.isPrimary === false || gesture) return;
-      const node = event.target.closest?.('[data-process-device]');
+      if (event.button !== 0 || event.isPrimary === false || gesture) return;
+      let node = event.target.closest?.('[data-process-device]');
+      if (node?.classList.contains('device-hit')) {
+        const candidate = nearestHit({ x:event.clientX,y:event.clientY }, nodes.filter(item => item.dataset.deviceModel === context().model)
+          .map(item => ({ node:item,rect:item.getBoundingClientRect() })));
+        if (candidate) node = candidate;
+      }
+      tapped = node;
+      if (viewport.dataset.simulationGestures === 'true') return;
       if (!node) return;
       event.stopPropagation(); event.preventDefault();
       gesture = { id:event.pointerId, x:event.clientX, y:event.clientY, node, moved:false, origin:options.getPan?.() };
@@ -283,22 +323,29 @@
       if (!saved.moved && Math.hypot(event.clientX - saved.x,event.clientY - saved.y) < 6 &&
         event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) open(saved.node);
     });
-    const cancel = () => { if (gesture) { try { viewport.releasePointerCapture(gesture.id); } catch {} gesture = null; } };
+    const cancel = () => { tapped = null; if (gesture) { try { viewport.releasePointerCapture(gesture.id); } catch {} gesture = null; } };
     view.addEventListener('pointercancel', cancel); viewport?.addEventListener('lostpointercapture', cancel);
     view.addEventListener('blur', cancel);
     doc.addEventListener('keydown', event => {
       const node = event.target.closest?.('[data-process-device]');
       if (node && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open(node); }
       if (event.key === 'Escape' && active && !event.defaultPrevented) { event.preventDefault(); event.stopImmediatePropagation(); close({ restoreFocus:true }); }
+      if (event.key === 'Tab' && active && !event.shiftKey && event.target === Array.from(panel.querySelectorAll('input,select,button')).filter(node => !node.disabled && node.getClientRects().length).at(-1)) {
+        const all = Array.from(doc.querySelectorAll('a[href],button,input,select,textarea,[tabindex]')).filter(node => !panel.contains(node) && node.tabIndex >= 0 && !node.disabled && node.getClientRects().length);
+        const anchor = nodes.find(node => node.dataset.deviceModel === active.model && node.dataset.processDevice === active.device.id);
+        const next = all[all.indexOf(anchor) + 1];
+        if (next) { event.preventDefault(); close(); next.focus(); }
+      }
     });
     doc.addEventListener('pointerdown', event => {
       if (active && !panel.contains(event.target) && !event.target.closest?.('[data-process-device]')) close();
     }, true);
     panel.querySelector('.device-close').onclick = () => close({ restoreFocus:true });
-    view.addEventListener('resize', position); view.addEventListener('scroll', position, true);
+    view.addEventListener('resize', () => { updateTargets(); position(); }); view.addEventListener('scroll', position, true);
     view.visualViewport?.addEventListener('resize', position); view.visualViewport?.addEventListener('scroll', position);
-    const observer = new view.MutationObserver(() => { if (active) refresh(); });
+    const observer = new view.MutationObserver(() => { updateTargets(); if (active) refresh(); });
     if (viewport) observer.observe(viewport, { subtree:true, attributes:true, attributeFilter:['style','class'] });
+    updateTargets();
     doc.addEventListener('input', event => { if (!panel.contains(event.target)) syncFields(); });
     const formObserver = new view.MutationObserver(() => { if (active) { syncFields(); position(); } });
     for (const id of ['loopCards','manualControls']) {
@@ -311,5 +358,5 @@
       else close();
     } };
   }
-  return { devices, related, reading, place, bind };
+  return { devices, related, reading, place, hitBox, nearestHit, bind };
 });

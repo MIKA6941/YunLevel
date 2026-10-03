@@ -61,7 +61,7 @@
           fields = [field('sp', `SP ${current.pvUnit(v.pv)}`, '', !teacher || !!current.state?.score?.active),
             field('kp','Kp'),field('ti','Ti (s)'),field('td','Td (s)'),field('manualOut','手动输出 %','',!v.manual)];
           actions.push({ id:'mode-loop',label:v.manual ? '投自动' : '投手动' });
-          if (v.manual) actions.push({ id:'output-loop',label:'应用手动输出' });
+          actions.push({ id:'output-loop',label:'应用手动输出',disabled:!v.manual });
         } else {
           fields = [field('outerSp',`主环 SP ${current.pvUnit(v.outer)}`,'主环',!teacher || !!current.state?.score?.active),
             field('outerKp','Kp','主环'),field('outerTi','Ti (s)','主环'),field('outerTd','Td (s)','主环'),
@@ -69,7 +69,7 @@
             field('innerManualOut','阀门手动输出 %','副环',!v.innerManual)];
           actions.push({ id:'mode-outer',label:v.outerManual ? '主环投自动' : '主环投手动' },
             { id:'mode-inner',label:v.innerManual ? '副环投自动' : '副环投手动' });
-          if (v.innerManual) actions.push({ id:'output-inner',label:'应用阀门手动输出' });
+          actions.push({ id:'output-inner',label:'应用阀门手动输出',disabled:!v.innerManual });
         }
         actions.unshift({ id:'pid',label:'应用参数',primary:true });
       } else if (device.manual) {
@@ -78,7 +78,7 @@
           source, policy:source && options.policy(source), disabled:!canWrite(current.account) }];
         actions.push({ id:'manual',label:'应用此设备',primary:true });
       }
-      return { root,fields:fields.filter(item => item.source),actions:actions.map(action => ({ ...action,disabled:!canWrite(current.account) })),
+      return { root,fields:fields.filter(item => item.source),actions:actions.map(action => ({ ...action,disabled:!!action.disabled || !canWrite(current.account) })),
         canBuild:canWrite(current.account) && device.pv !== undefined && !entry,
         entry, readonly:current.account?.viewOnly ? '观察窗口仅可查看。' : current.account?.role === 'student' ? 'SP 由教师设定；PID 与手操可调。' : '' };
     }

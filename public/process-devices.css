@@ -18,6 +18,8 @@
 .device-field-group + .device-field-group { padding-top:16px; border-top:1px solid var(--line); }
 .device-field-group legend { color:var(--text); font-size:14px; font-weight:600; margin-bottom:8px; }
 .device-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.device-field { min-width:0; }
+.device-field > label { display:block; }
 .device-fields label, .device-loop-choice { min-width:0; color:var(--muted); font-size:12px; line-height:1.5; }
 .device-fields input { min-width:0; width:100%; font-size:14px; }
 .device-fields input[readonly] { border-style:dashed; color:var(--muted); }
