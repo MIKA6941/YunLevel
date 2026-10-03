@@ -101,6 +101,7 @@ extern HxScoreState g_hxScore;
 
 void HxScoreInit();
 void HxScoreSetConfig(double dur_unit, double dur_sys, double band_hx);
+double HxScoreSessionDuration();
 void HxScoreColdReset();
 void HxScoreBeginSession();
 void HxScoreEndSession();

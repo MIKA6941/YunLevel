@@ -261,6 +261,7 @@ void emit_state(bool score_ended = false) {
     json_num("sessionT", g_hxScore.session_t, sf);
     json_num("runT", g_hxScore.run_t, sf);
     json_num("activeT", g_hxScore.active_t, sf);
+    json_num("durationS", HxScoreSessionDuration(), sf);
     json_num("total", g_hxScore.unit_score.cat.total, sf);
     json_num("operation", g_hxScore.unit_score.cat.operation, sf);
     json_num("control", g_hxScore.unit_score.cat.control, sf);

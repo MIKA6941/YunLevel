@@ -150,7 +150,7 @@ class EngineSession extends EventEmitter {
       operation: Number(score.operation || 0),
       target: Number(score.target || 0),
       safetyDeduction: Number(score.safetyDeduction || 0),
-      durationS: Number(score.mode || 0) === 2 ? 1500 : (Number(score.mode || 0) === 1 ? 480 : 0),
+      durationS: Number(score.durationS || 0),
     };
   }
 

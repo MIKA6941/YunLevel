@@ -147,6 +147,7 @@ void reset_simulation() {
     for (int i = 0; i < nCasc; ++i) cascBak[i] = s->casc[i];
 
     const double spf1 = s->spf[0], spf2 = s->spf[1], spf3 = s->spf[2];
+    const double sp1 = s->sp1, sp2 = s->sp2, sp3 = s->sp3, setpoint = s->setpoint;
 
     InitSimulation(s);
     s->mode = mode;
@@ -159,6 +160,7 @@ void reset_simulation() {
     for (int i = 0; i < nCasc; ++i) s->casc[i] = cascBak[i];
     s->nCasc = nCasc;
     s->spf[0] = spf1; s->spf[1] = spf2; s->spf[2] = spf3;
+    s->sp1 = sp1; s->sp2 = sp2; s->sp3 = sp3; s->setpoint = setpoint;
     s->needRecalcLoops = 1;
 
     ApplyPidGains(s);
