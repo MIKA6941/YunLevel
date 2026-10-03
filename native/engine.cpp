@@ -734,6 +734,13 @@ void process_line(const std::string& line) {
         }
         start_score_session();
         state_changed = true;
+    } else if (cmd == "SCORE_FINISH") {
+        ScoreFinishSession();
+        score_ended = ScoreTakeFinishedEvent();
+        g_engine.sys.running = false;
+        g_engine.sys.paused = false;
+        g_engine.paused = false;
+        state_changed = true;
     } else if (cmd == "SCORE_END") {
         ScoreEndSession();
         state_changed = true;

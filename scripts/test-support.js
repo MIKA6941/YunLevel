@@ -9,12 +9,13 @@ function removeTestDir(dir) {
   if (!path.resolve(dir).startsWith(path.join(ROOT, '.test-data-'))) throw new Error('unsafe test cleanup');
   fs.rmSync(dir, { recursive: true, force: true });
 }
-async function withServer(run, extraEnv = {}) {
+async function withServer(run, extraEnv = {}, initializeData) {
   const listener = net.createServer();
   await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
   const port = listener.address().port;
   await new Promise(resolve => listener.close(resolve));
   const dataDir = fs.mkdtempSync(path.join(ROOT, '.test-data-core-'));
+  if (initializeData) initializeData(dataDir);
   const child = spawn(process.execPath, ['server/server.js'], {
     cwd: ROOT, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: String(port), YUN_DATA_DIR: dataDir,

@@ -10,7 +10,7 @@ const api = async (url, options = {}) => {
     ...options,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status, code: data.code });
   return data;
 };
 
@@ -1972,12 +1972,13 @@ function renderScore(state) {
   $('scoreSubtitle').textContent = s.active
     ? `评分时间 ${number(s.sessionT, 0)} s`
     : (s.finished ? '评分已结束，可查看结果。' : (mode ? '评分方案已选择，点击“开始评分”后开始计时。' : '请先选择评分方案，再点击“开始评分”。'));
+  if (s.finished && s.endReason && s.endReason !== 'completed') $('scoreSubtitle').textContent = `本轮已结束，成绩为零分（${s.endReason}）；回到冷态后才能开始新一轮。`;
   $('scoreTotal').textContent = number(s.total, 1);
   if (app.me?.role === 'student' && s.effectiveConfig) {
     const c = s.effectiveConfig;
     const duration = c.mode === 2 ? c.durationSystem : c.durationUnit;
     const target = c.targets?.[c.tank] ?? c.targets?.[0];
-    $('scoreSubtitle').textContent += ` 教师规则 v${s.configRevision}：${duration} s，目标 ${target}，带宽 ${app.modelId === 'hx' ? c.bandHx : c.bandTank}。`;
+    $('scoreSubtitle').textContent += ` 教师规则 v${s.configRevision}：${duration} s，目标 ${target}，带宽 ${modelSpec().modelId === 'hx' ? c.bandHx : c.bandTank}。`;
   }
   $('scoreOp').textContent = number(s.operation, 1);
   $('scoreCtrl').textContent = number(s.control, 1);
@@ -4340,10 +4341,26 @@ function wireLogin() {
     showLogin('');
   };
   window.addEventListener('pagehide', () => {
-    if (!app.loggingOut && app.me?.role === 'student') {
-      navigator.sendBeacon('/api/student/auto-save', new Blob(['{}'], { type: 'application/json' }));
+    if (!app.loggingOut && app.me?.sessionId) {
+      const body = JSON.stringify({ sessionId: app.me.sessionId, attemptId: app.state?.score?.attemptId || null });
+      if (!navigator.sendBeacon('/api/session/end', new Blob([body], { type: 'application/json' }))) {
+        fetch('/api/session/end', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+      }
     }
   });
+  setInterval(async () => {
+    if (!app.me?.sessionId || app.loggingOut) return;
+    try {
+      const result = await api('/api/session/heartbeat', { method: 'POST', body: JSON.stringify({
+        sessionId: app.me.sessionId, attemptId: app.state?.score?.attemptId || null,
+      }) });
+      app.me.viewOnly = result.viewOnly;
+      syncTeacherObservation();
+    } catch (err) {
+      if (err.status === 401) showLogin('会话已结束，请重新登录；评分不能续接。');
+      else setConnection(false, '心跳中断');
+    }
+  }, 15000);
   document.querySelectorAll('#mainTabs .tab').forEach((tab) => {
     tab.onclick = () => switchView(tab.dataset.view);
   });
@@ -4377,7 +4394,7 @@ function syncStudentRuleAccess() {
   document.querySelectorAll('[data-field="sp"], [data-field="outerSp"]').forEach(el => { el.readOnly = true; el.title = '目标由教师设定'; });
   document.querySelectorAll('#scoreOffBtn, #scoreTankBtn, #scoreSystemBtn, [data-score-tank]').forEach(el => { el.disabled = true; el.title = '评分方案由教师设定'; });
   const start = $('scoreStartBtn');
-  if (start) { start.disabled = !app.cloudSettings.scoreSystemOn || !!app.state?.score?.active; start.title = '按教师规则开始新一轮评分'; }
+  if (start) { start.disabled = !app.cloudSettings.scoreSystemOn || !!app.state?.score?.active || !!app.state?.score?.finished; start.title = '按教师规则开始新一轮评分；已结束时先回到冷态'; }
 }
 
 function syncTeacherObservation() {

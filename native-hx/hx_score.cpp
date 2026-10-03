@@ -279,6 +279,13 @@ void HxScoreEndSession() {
 }
 
 bool HxScoreSessionActive() { return g_hxScore.session_active; }
+void HxScoreFinishSession() {
+    if (!g_hxScore.session_active) return;
+    g_hxScore.session_active = false;
+    g_hxScore.session_finished = true;
+    g_hxScore.session_just_end = true;
+    g_hxScore.unit_score.cat = {};
+}
 bool HxScoreSessionFinished() { return g_hxScore.session_finished; }
 
 bool HxScoreTakeFinishedEvent() {

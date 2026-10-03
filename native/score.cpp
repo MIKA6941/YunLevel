@@ -226,6 +226,14 @@ void ScoreEndSession() {
 }
 
 bool ScoreSessionActive() { return g_score.session_active; }
+void ScoreFinishSession() {
+    if (!g_score.session_active) return;
+    g_score.session_active = false;
+    g_score.session_finished = true;
+    g_score.session_just_end = true;
+    for (auto& tank : g_score.tank_score) tank.cat = {};
+    g_score.system_score.cat = {};
+}
 double ScoreSessionTime() { return g_score.session_t; }
 bool ScoreSessionFinished() { return g_score.session_finished; }
 

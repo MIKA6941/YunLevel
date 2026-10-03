@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
 const config = require('./config');
-const { ensureDir, appendJsonLine, readJson, readJsonLines, csvCell, safeId } = require('./storage');
+const { ensureDir, appendJsonLine, readJson, readJsonLines, csvCell, safeId, writeJsonAtomic } = require('./storage');
 const { hashId } = require('./storage');
 const {
   RosterStore,
@@ -66,6 +66,21 @@ const studentStreams = new Map();
 const teacherStreams = new Map();
 const teacherStudentStreams = new Map();
 let recordCache = readJsonLines(config.recordsFile);
+const attemptsFile = path.join(config.dataDir, 'active-attempts.json');
+const activeAttempts = readJson(attemptsFile, {});
+function persistAttempt(engine) {
+  const attempt = engine.currentAttempt;
+  if (!attempt || attempt.ended || engine.ownerRole === 'teacher') return;
+  activeAttempts[attempt.id] = { attempt, state: engine.lastState,
+    sessionKey: engine.sessionKey, modelId: engine.modelId, classId: engine.classId,
+    studentId: engine.studentId, name: engine.name, className: engine.className, ownerRole: 'student' };
+  writeJsonAtomic(attemptsFile, activeAttempts);
+}
+function runEngineOperation(engine, operation) {
+  const next = (engine.operations || Promise.resolve()).then(operation);
+  engine.operations = next.catch(() => {});
+  return next;
+}
 
 // 会话键。tank 走 sessionKeyForModel 的默认分支，返回值与改造前逐字一致。
 function sessionKey(classId, studentId) {
@@ -418,6 +433,14 @@ function appendScoreRecord(engine) {
   const key = engine.currentAttempt?.id || `${engine.sessionKey}:${score.sessionT}:${score.total}`;
   if (engine.lastRecordKey === key) return;
   engine.lastRecordKey = key;
+  if (engine.currentAttempt) {
+    engine.currentAttempt.ended = true;
+    delete activeAttempts[key];
+  }
+  if (engine.currentAttempt && recordCache.some(r => r.attemptId === key)) {
+    writeJsonAtomic(attemptsFile, activeAttempts);
+    return;
+  }
   const record = {
     endedAt: new Date().toISOString(),
     attemptId: engine.currentAttempt?.id || null,
@@ -448,6 +471,50 @@ function appendScoreRecord(engine) {
   };
   recordCache.push(record);
   appendJsonLine(config.recordsFile, record);
+  writeJsonAtomic(attemptsFile, activeAttempts);
+}
+
+function sealFailedAttempt(engine, reason) {
+  if (!engine.currentAttempt || engine.currentAttempt.ended) return;
+  engine.currentAttempt.endReason = reason;
+  const state = engine.lastState || {};
+  const score = { ...(state.score || {}), active: false, finished: true };
+  for (const key of ['total', 'operation', 'target', 'control', 'safety', 'benefit', 'flowBalance', 'efficiency']) score[key] = 0;
+  engine.lastState = { ...state, running: false, paused: false, score };
+  appendScoreRecord(engine);
+}
+async function finishStudentAttempt(engine, reason) {
+  if (!engine?.currentAttempt || engine.currentAttempt.ended) return;
+  if (engine.finishingAttempt) return engine.finishingAttempt;
+  engine.currentAttempt.endReason = reason;
+  engine.finishingAttempt = (async () => {
+    try {
+      await engine.send('SCORE_FINISH');
+      // If the native assessment never started (e.g. failed start), still seal the allocated ID.
+      if (!engine.currentAttempt.ended) sealFailedAttempt(engine, reason);
+      await engine.send('SAVE');
+    } catch { sealFailedAttempt(engine, reason); }
+  })();
+  try { await engine.finishingAttempt; } finally { engine.finishingAttempt = null; }
+}
+async function endAuth(auth, reason) {
+  if (!auth) return;
+  if (auth.ending) return auth.ending;
+  auth.ending = (async () => {
+    if (auth.role === 'teacher') return releaseTeacher(auth);
+    const engine = engineForAuth(auth);
+    if (engine) await runEngineOperation(engine, async () => {
+      await finishStudentAttempt(engine, reason);
+      try { await engine.send('DEACTIVATE'); await saveStudentRecovery(engine, reason); } catch {}
+      stopEngine(engine, true);
+      if (enginesByKey.get(auth.sessionKey) === engine) enginesByKey.delete(auth.sessionKey);
+    });
+    for (const res of studentStreams.get(auth.sessionKey) || []) res.end();
+    studentStreams.delete(auth.sessionKey);
+    sessionsByToken.delete(auth.token);
+    broadcastOverview();
+  })();
+  return auth.ending;
 }
 
 function recordModel(record) {
@@ -539,7 +606,7 @@ async function applyScoreConfigToAll(patchScoreConfig, opts = {}) {
   const settings = snapshots.getSettings();
   for (const engine of enginesByKey.values()) {
     if (!engine || engine.closed) continue;
-    results.push(await applyScoreConfigToEngine(engine, settings.scoreConfig, { ...opts, settings }));
+    results.push(await runEngineOperation(engine, () => applyScoreConfigToEngine(engine, settings.scoreConfig, { ...opts, settings })));
   }
   return results;
 }
@@ -569,10 +636,15 @@ function attachEngine(engine) {
     broadcastToStudent(engine, 'state', state);
     broadcastToTeacherStudentWatchers(engine, state);
     if (state.scoreEnded && engine.ownerRole !== 'teacher') appendScoreRecord(engine);
+    persistAttempt(engine);
     if (engine.ownerRole !== 'teacher') broadcastOverview();
   });
   engine.on('log', (text) => console.error(`[engine ${engine.classId}/${engine.studentId}] ${text}`));
   engine.on('closed', () => {
+    if (engine.ownerRole !== 'teacher' && enginesByKey.get(engine.sessionKey) === engine) {
+      sealFailedAttempt(engine, 'kernel_failure');
+      revokeStudentAuth(engine.classId, engine.studentId, engine.modelId);
+    }
     if (enginesByKey.get(engine.sessionKey) === engine) {
       enginesByKey.delete(engine.sessionKey);
     }
@@ -611,7 +683,11 @@ function stopStudentEngine(classId, studentId) {
     const key = sessionKeyFor(classId, studentId, modelId);
     const engine = enginesByKey.get(key);
     if (engine) {
-      saveStudentRecovery(engine, 'account-change').catch(() => {}).finally(() => stopEngine(engine, true));
+      runEngineOperation(engine, async () => {
+        await finishStudentAttempt(engine, 'account_change');
+        try { await saveStudentRecovery(engine, 'account-change'); } catch {}
+        stopEngine(engine, true);
+      }).catch(console.error);
       enginesByKey.delete(key);
     }
     studentStreams.delete(key);
@@ -622,7 +698,11 @@ function stopStudentEngine(classId, studentId) {
 function stopClassEngines(classId) {
   for (const [key, engine] of enginesByKey) {
     if (engine.classId !== classId) continue;
-    saveStudentRecovery(engine, 'class-change').catch(() => {}).finally(() => stopEngine(engine, true));
+    runEngineOperation(engine, async () => {
+      await finishStudentAttempt(engine, 'class_change');
+      try { await saveStudentRecovery(engine, 'class-change'); } catch {}
+      stopEngine(engine, true);
+    }).catch(console.error);
     enginesByKey.delete(key);
     studentStreams.delete(key);
   }
@@ -651,6 +731,8 @@ async function login(req, res, body) {
     const token = makeToken();
     const auth = {
       token,
+      sessionId: crypto.randomUUID(),
+      lastClientSeen: Date.now(),
       role: 'teacher',
       classId: TEACHER_CLASS_ID,
       sessionKey: teacherKey,
@@ -678,6 +760,7 @@ async function login(req, res, body) {
       name: auth.name,
       className: auth.className,
       viewOnly: !!auth.viewOnly,
+      sessionId: auth.sessionId,
       state: engine.lastState,
     });
   }
@@ -725,6 +808,8 @@ async function login(req, res, body) {
   const token = makeToken();
   const auth = {
     token,
+    sessionId: crypto.randomUUID(),
+    lastClientSeen: Date.now(),
     role: 'student',
     classId: classInfo.id,
     sessionKey: key,
@@ -739,6 +824,7 @@ async function login(req, res, body) {
   return sendJson(res, 200, {
     role: 'student',
     model: modelId,
+    sessionId: auth.sessionId,
     classId: classInfo.id,
     studentId,
     name: student.name,
@@ -748,6 +834,13 @@ async function login(req, res, body) {
 }
 
 async function handleCommand(req, res, auth, body, options = {}) {
+  const engine = options.studentTarget
+    ? enginesByKey.get(sessionKeyFor(body.classId, body.studentId, body.model || auth.modelId))
+    : engineForAuth(auth);
+  if (!engine) return sendJson(res, 404, { code: 'SESSION_NOT_FOUND', error: '没有正在运行的会话' });
+  return runEngineOperation(engine, () => handleCommandUnlocked(req, res, auth, body, options));
+}
+async function handleCommandUnlocked(req, res, auth, body, options = {}) {
   const cmd = String(body.cmd || '').trim();
   const engine = options.studentTarget
     ? enginesByKey.get(sessionKeyFor(body.classId, body.studentId, body.model || auth.modelId))
@@ -762,10 +855,15 @@ async function handleCommand(req, res, auth, body, options = {}) {
   if (allowed === null) return sendJson(res, 400, { code: 'UNKNOWN_COMMAND', error: '未知控制命令' });
   if (!allowed) return sendJson(res, 403, { code: 'COMMAND_FORBIDDEN', error: '此命令只能由教师或服务器执行' });
   try {
-    if (engine.lastState?.score?.active && ['SET_MODE','SCORE_CFG','SCORE_MODE','SCORE_TANK','SCORE_OBJECT','SET_SP','SET_FLOW_SP','SET_PVX_SP','SET_INIT_TEMP','PRESET','HIGH_SCORE','TEMPLATE_A','TEMPLATE_B','SCENARIO'].includes(name)) {
+    if (auth.ending) throw Object.assign(new Error('会话已结束'), { statusCode: 409, code: 'SESSION_ENDED' });
+    if (engine.ownerRole === 'student' && engine.lastState?.score?.finished && ['START', 'SCORE_START'].includes(name)) {
+      throw Object.assign(new Error('本轮已封存，请回到冷态开始新一轮'), { statusCode: 409, code: 'SCORE_RESET_REQUIRED' });
+    }
+    if (engine.lastState?.score?.active && ['SET_MODE','SCORE_END','SCORE_CFG','SCORE_MODE','SCORE_TANK','SCORE_OBJECT','SET_SP','SET_FLOW_SP','SET_PVX_SP','SET_INIT_TEMP','PRESET','HIGH_SCORE','TEMPLATE_A','TEMPLATE_B','SCENARIO'].includes(name)) {
       throw Object.assign(new Error('本轮评分采用开始时的规则，请下一轮再修改'), { statusCode: 409, code: 'ASSESSMENT_LOCKED' });
     }
     if (name === 'SCORE_START' && engine.ownerRole === 'student') {
+      if (engine.lastState?.score?.finished) throw Object.assign(new Error('本轮已封存，请回到冷态开始新一轮'), { statusCode: 409, code: 'SCORE_RESET_REQUIRED' });
       if (engine.lastState?.running || Number(engine.lastState?.sim_time || 0) !== 0 || engine.lastState?.score?.active) {
         throw Object.assign(new Error('请先回到冷态，再开始评分'), { statusCode: 409, code: 'SCORE_START_NOT_COLD' });
       }
@@ -774,7 +872,9 @@ async function handleCommand(req, res, auth, body, options = {}) {
       if (applied.status !== 'applied') throw Object.assign(new Error(applied.error), { statusCode: 503, code: 'CONFIG_APPLY_FAILED' });
       engine.currentAttempt = { id: crypto.randomUUID(), revision: engine.appliedScoreConfig.revision,
         config: { ...engine.appliedScoreConfig }, startedAt: new Date().toISOString() };
+      persistAttempt(engine);
     }
+    if (name === 'RESET' && engine.ownerRole === 'student') await finishStudentAttempt(engine, 'reset');
     const state = await engine.send(cmd);
     if (engine.ownerRole === 'student' && ['RESET','SET_MODE'].includes(name)) {
       engine.currentAttempt = null;
@@ -1256,24 +1356,23 @@ async function mainHandler(req, res) {
     }
     if (req.method === 'POST' && pathname === '/api/logout') {
       const auth = authOf(req);
-      if (auth) {
-        if (auth.role === 'teacher') {
-          releaseTeacher(auth);
-          res.setHeader('Set-Cookie', 'yun_token=; Max-Age=0; Path=/');
-          return sendJson(res, 200, { ok: true });
-        }
-        sessionsByToken.delete(auth.token);
-        if (auth.role === 'student' || auth.role === 'teacher') {
-          const engine = engineForAuth(auth);
-          if (auth.role === 'student' && engine) {
-            try { await saveStudentRecovery(engine, 'logout'); } catch (err) { console.error(`snapshot on logout failed: ${err.message}`); }
-          }
-          stopEngine(engine, auth.role === 'student');
-          enginesByKey.delete(auth.sessionKey);
-          studentStreams.delete(auth.sessionKey);
-        }
-      }
+      await endAuth(auth, 'logout');
       res.setHeader('Set-Cookie', 'yun_token=; Max-Age=0; Path=/');
+      return sendJson(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && ['/api/session/heartbeat', '/api/session/end'].includes(pathname)) {
+      const body = await readBody(req);
+      const auth = authOf(req);
+      if (!auth) return sendJson(res, pathname.endsWith('/end') ? 200 : 401, { ok: true, ignored: true, code: 'SESSION_ENDED' });
+      if (body.sessionId !== auth.sessionId) return sendJson(res, 409, { code: 'STALE_SESSION', error: '会话编号已失效' });
+      const engine = engineForAuth(auth);
+      const attemptId = engine?.currentAttempt?.id || null;
+      if ((body.attemptId || null) !== attemptId) return sendJson(res, 409, { code: 'STALE_ATTEMPT', error: '评分编号已失效' });
+      if (pathname.endsWith('/heartbeat')) {
+        auth.lastClientSeen = Date.now();
+        return sendJson(res, 200, { ok: true, viewOnly: !!auth.viewOnly });
+      }
+      await endAuth(auth, 'page_closed');
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'GET' && pathname === '/api/me') {
@@ -1287,6 +1386,8 @@ async function mainHandler(req, res) {
         name: auth.name,
         className: auth.className,
         viewOnly: !!auth.viewOnly,
+        sessionId: auth.sessionId,
+        attemptId: engineForAuth(auth)?.currentAttempt?.id || null,
       });
     }
 
@@ -1783,6 +1884,12 @@ function serveStatic(res, pathname) {
   });
 }
 
+// A restarted gateway cannot resume an assessment from its binary snapshot.
+// Metadata is journaled separately so existing native file layouts stay unchanged.
+for (const saved of Object.values(activeAttempts)) {
+  sealFailedAttempt({ ...saved, currentAttempt: saved.attempt, lastState: saved.state }, 'server_restart');
+}
+
 const server = http.createServer((req, res) => {
   mainHandler(req, res).catch((err) => {
     console.error('HTTP handler failed:', err);
@@ -1811,14 +1918,22 @@ setInterval(() => {
 }, 1000).unref?.();
 
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_TIMEOUT_MS = Math.max(1000, Number(process.env.YUN_SESSION_TIMEOUT_MS) || 90000);
+setInterval(() => {
+  const now = Date.now();
+  for (const auth of sessionsByToken.values()) {
+    if (now - auth.lastClientSeen >= SESSION_TIMEOUT_MS) endAuth(auth, 'heartbeat_timeout').catch(console.error);
+  }
+}, Math.min(5000, SESSION_TIMEOUT_MS / 3)).unref?.();
 setInterval(() => {
   const now = Date.now();
   for (const [token, auth] of sessionsByToken) {
-    if (now - auth.createdAt > TOKEN_TTL_MS) sessionsByToken.delete(token);
+    if (now - auth.createdAt > TOKEN_TTL_MS) endAuth(auth, 'session_expired').catch(console.error);
   }
 }, 10 * 60 * 1000).unref?.();
 
-function shutdown() {
+async function shutdown() {
+  for (const auth of sessionsByToken.values()) await endAuth(auth, 'server_shutdown');
   for (const engine of enginesByKey.values()) engine.stop();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref?.();

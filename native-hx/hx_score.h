@@ -105,6 +105,7 @@ double HxScoreSessionDuration();
 void HxScoreColdReset();
 void HxScoreBeginSession();
 void HxScoreEndSession();
+void HxScoreFinishSession();
 bool HxScoreSessionActive();
 bool HxScoreSessionFinished();
 bool HxScoreTakeFinishedEvent();

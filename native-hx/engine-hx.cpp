@@ -685,6 +685,12 @@ void process_line(const std::string& line) {
         }
         HxScoreBeginSession();
         state_changed = true;
+    } else if (cmd == "SCORE_FINISH") {
+        HxScoreFinishSession();
+        score_ended = HxScoreTakeFinishedEvent();
+        s->running = false;
+        s->paused = false;
+        state_changed = true;
     } else if (cmd == "SCORE_END") {
         HxScoreEndSession();
         state_changed = true;

@@ -55,3 +55,22 @@ test('HX finishes each mode at its own default and custom deadline', async () =>
   }
 });
 module.exports = { withEngine };
+test('gateway-only finish preserves elapsed time and emits one frozen zero result in both kernels', async () => {
+  for (const model of ['tank', 'hx']) await withEngine(model, async e => {
+    await e.send('SCORE_MODE 1');
+    await e.send('SCORE_START');
+    await e.tick(false); await e.tick(false); await e.tick(false);
+    const ended = await e.send('SCORE_FINISH');
+    assert.equal(ended.scoreEnded, true);
+    assert.equal(ended.score.sessionT, 3);
+    assert.equal(ended.score.total, 0);
+    assert.equal(ended.score.active, false);
+    assert.equal(ended.score.finished, true);
+    assert.equal(ended.running, false);
+    const repeated = await e.send('SCORE_FINISH');
+    assert.equal(repeated.scoreEnded, false);
+    await e.tick(false);
+    assert.equal(e.lastState.score.sessionT, 3);
+    assert.equal(e.lastState.score.total, 0);
+  });
+});
