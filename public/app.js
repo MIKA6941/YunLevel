@@ -1307,11 +1307,13 @@ function renderLoopWorkspace(loops, cascades) {
       button.dataset.workspaceSelect = item.key;
       button.innerHTML = '<span class="loop-list-top"><b></b><span class="loop-list-mode"></span></span><span class="loop-list-path"></span><span class="loop-list-pv"></span>';
       button.onclick = () => {
+        const previous = app.loopSelection.current(model)?.key;
         app.loopSelection.select(model, item.key);
         if (app.state) {
           renderLoops(app.state);
           renderPidProcess(app.state);
         }
+        app.workspaceMotion.selection(previous, item.key, $('loopCards').querySelector('.loop-card:not(.hidden)'));
       };
       list.appendChild(button);
     });
@@ -1344,8 +1346,10 @@ function renderLoopWorkspace(loops, cascades) {
 }
 
 function wireControlWorkspace() {
+  app.workspaceMotion = WorkspaceMotion.create(document);
   app.parameterFeedback = ParameterFeedback.bind(document);
   app.parameterSlider = ParameterSlider.bind(document, {
+    motion:app.workspaceMotion,
     selector: '#loopCards input[data-field], #manualControls .field-grid input[type="number"]',
     getPolicy: parameterSliderPolicy,
   });

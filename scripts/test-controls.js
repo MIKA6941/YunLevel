@@ -28,6 +28,7 @@ for (const file of [
   'public/control-workspace.js',
   'public/parameter-slider.js',
   'public/parameter-feedback.js',
+  'public/workspace-motion.js',
 ]) {
   run(['--check', file]);
 }
@@ -38,4 +39,5 @@ run([
   'scripts/parameter-slider.test.js',
   'scripts/critical-readouts.test.js',
   'scripts/parameter-feedback.test.js',
+  'scripts/workspace-motion.test.js',
 ]);

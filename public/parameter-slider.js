@@ -117,6 +117,7 @@
 
     // close(true) may restore focus; suppressFocus keeps Escape from reopening.
     function close(restoreFocus = false) {
+      options.motion?.cancel('slider');
       const oldSource = source;
       source = null;
       state = null;
@@ -227,6 +228,7 @@
       doc.body.appendChild(panel);
       sync();
       position();
+      options.motion?.slider(panel);
       watch();
     }
 
