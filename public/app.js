@@ -457,11 +457,24 @@ function metricElementId(key) {
 }
 
 function renderModelMetrics(state = app.state) {
+  renderCriticalReadouts(state);
   if (!state) return;
   for (const tag of modelSpec().parameterTags || []) {
     const el = $(metricElementId(tag.key));
     if (el) el.textContent = number(state[tag.key], tag.digits ?? 2);
   }
+}
+
+function renderCriticalReadouts(state) {
+  const strip = $('criticalReadouts');
+  if (!strip) return;
+  const rows = ControlWorkspace.criticalReadouts(workspaceModel(), modelSpec().parameterTags, state);
+  const signature = JSON.stringify(rows.map(({ key, label, unit }) => [key, label, unit]));
+  if (strip.dataset.signature !== signature) {
+    strip.dataset.signature = signature;
+    strip.innerHTML = rows.map(row => '<div><span>' + escapeHtml(row.label) + '</span><p><b data-critical="' + escapeAttr(row.key) + '">—</b><span class="readout-unit">' + escapeHtml(row.unit) + '</span></p></div>').join('');
+  }
+  rows.forEach(row => { strip.querySelector(`[data-critical="${row.key}"]`).textContent = row.value; });
 }
 
 function setSelectOptions(select, items, preferredValue, selectedValue) {
@@ -493,6 +506,7 @@ function renderManualFields() {
 }
 
 function renderMetricGrid() {
+  renderCriticalReadouts(null);
   const grid = $('metricGrid');
   if (!grid) return;
   grid.innerHTML = (modelSpec().parameterTags || []).map((tag) => '<div><span>' + escapeHtml(tag.label.replace(/\([^)]*\)$/, '')) + '</span><b id="' + escapeAttr(metricElementId(tag.key)) + '">-</b></div>').join('');

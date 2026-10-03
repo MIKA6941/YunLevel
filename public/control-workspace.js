@@ -62,5 +62,17 @@
     if (field === 'manualout') return { label, min:0, max:100, step:0.1, hardMin:0, hardMax:100 };
     return null;
   }
-  return { SelectionStore, entries, parameterPolicy };
+  function criticalReadouts(model, tags, state) {
+    const keys = model === 'hx' ? ['ti1104', 'sp', 'ti1103', 'fi1105'] : ['h1', 'h2', 'h3'];
+    return keys.map(key => {
+      const tag = (tags || []).find(item => item.key === key) || { key, label:key };
+      const suffix = /\(([^)]+)\)\s*$/.exec(tag.label);
+      const raw = state?.[key];
+      const numeric = (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '')) && Number.isFinite(Number(raw));
+      const digits = Number.isInteger(tag.digits) ? Math.max(0, Math.min(6, tag.digits)) : 2;
+      return { key, label:tag.label.replace(/\([^)]*\)\s*$/, '').trim(),
+        unit:suffix?.[1] || '', value:numeric ? Number(raw).toFixed(digits) : '—' };
+    });
+  }
+  return { SelectionStore, entries, parameterPolicy, criticalReadouts };
 });

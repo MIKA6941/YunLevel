@@ -35,4 +35,5 @@ run([
   '--test',
   'scripts/control-workspace.test.js',
   'scripts/parameter-slider.test.js',
+  'scripts/critical-readouts.test.js',
 ]);
