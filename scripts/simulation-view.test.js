@@ -14,7 +14,7 @@ function surface() {
       events.get(name).push(fn);
     },
     fire(name, details = {}) {
-      const event = { pointerId: 1, clientX: 100, clientY: 80, button: 0,
+      const event = { type:name, pointerId: 1, clientX: 100, clientY: 80, button: 0,
         buttons: 1, isPrimary: true, target: { closest: () => null },
         preventDefault() {}, ...details };
       for (const fn of events.get(name) || []) fn(event);
@@ -81,6 +81,47 @@ test('dragging still works when pointer capture is unavailable', () => {
   f.host.fire('pointerup');
   assert.equal(f.pan().x, 70);
   assert.equal(f.viewport.classList.contains('panning'), false);
+});
+
+test('a device tap activates once and small pointer jitter never pans', () => {
+  const viewport = surface(), host = surface(), taps = [], pans = [];
+  viewport.ownerDocument = { defaultView:host };
+  const target = { closest:() => null };
+  bindPan(viewport, { getPan:() => ({ x:0, y:0 }), onPan:pan => pans.push(pan), onTap:node => taps.push(node) });
+  viewport.fire('pointerdown', { target });
+  host.fire('pointermove', { clientX:104, clientY:82 });
+  host.fire('pointerup', { clientX:104, clientY:82 });
+  host.fire('pointerup');
+  assert.deepEqual(taps, [target]);
+  assert.deepEqual(pans, []);
+});
+test('crossing the six-pixel threshold starts pan once and never activates on release', () => {
+  const viewport = surface(), host = surface(); let starts = 0, taps = 0, pan;
+  viewport.ownerDocument = { defaultView:host };
+  bindPan(viewport, { getPan:() => ({ x:20, y:30 }), onPan:value => { pan = value; },
+    onTap:() => taps++, onPanStart:() => starts++ });
+  viewport.fire('pointerdown');
+  assert.equal(viewport.classList.contains('panning'), false);
+  host.fire('pointermove', { clientX:106 });
+  host.fire('pointermove', { clientX:120 });
+  host.fire('pointerup');
+  assert.deepEqual(pan, { x:40, y:30 });
+  assert.equal(starts, 1); assert.equal(taps, 0);
+});
+test('cancellation, leaving the viewport and a far release cannot activate a device', () => {
+  for (const reason of ['pointercancel', 'lostpointercapture', 'blur', 'outside', 'far']) {
+    const viewport = surface(), host = surface(); let taps = 0;
+    viewport.ownerDocument = { defaultView:host };
+    viewport.getBoundingClientRect = () => ({ left:99, right:200, top:79, bottom:180 });
+    bindPan(viewport, { getPan:() => ({ x:0, y:0 }), onPan:() => {}, onTap:() => taps++ });
+    viewport.fire('pointerdown');
+    if (reason === 'outside') host.fire('pointerup', { clientX:98 });
+    else if (reason === 'far') host.fire('pointerup', { clientX:150 });
+    else if (reason === 'lostpointercapture') viewport.fire(reason);
+    else host.fire(reason);
+    host.fire('pointerup');
+    assert.equal(taps, 0, reason);
+  }
 });
 
 const geometry = { width: 1100, height: 470, viewportWidth: 720, viewportHeight: 478 };
