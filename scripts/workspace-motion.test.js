@@ -125,3 +125,16 @@ test('destroy removes subscriptions and prevents later motion', () => {
   assert.equal(f.animations.length, 1);
   assert.equal(f.listeners.size, 0);
 });
+
+test('a newer edit cancels confirmation and a hidden form does not flash on return', () => {
+  const f = fixture();
+  const message = f.target();
+  f.motion.confirm(message);
+  assert.equal(f.animations[0].options.duration, 180);
+  f.motion.cancel(message);
+  message.getClientRects = () => [];
+  f.motion.confirm(message);
+  assert.equal(f.animations[0].cancelled, true);
+  assert.equal(f.animations.length, 1);
+  f.motion.destroy();
+});

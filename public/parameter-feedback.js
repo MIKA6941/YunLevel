@@ -30,9 +30,10 @@
     }
   }
 
-  function bind(doc) {
+  function bind(doc, options = {}) {
     const selector = '[data-loop-card], [data-casc-card], #manualControls';
     const states = new WeakMap();
+    let destroyed = false;
     function state(root) {
       if (!states.has(root)) states.set(root, { pending:false, error:'', applied:false });
       return states.get(root);
@@ -70,10 +71,11 @@
       if (!root || input.tagName !== 'INPUT' || input.disabled || input.readOnly) return;
       input.dataset.dirty = '1';
       state(root).error = '';
+      options.motion?.cancel(root.querySelector('.parameter-feedback'));
       refresh(root);
     }
     doc.addEventListener('input', onInput);
-    const observer = new MutationObserver(refreshAll);
+    const observer = new doc.defaultView.MutationObserver(refreshAll);
     for (const id of ['loopCards', 'manualControls']) {
       const container = doc.getElementById(id);
       if (container) observer.observe(container, { subtree:true, childList:true, attributes:true,
@@ -84,11 +86,12 @@
       refresh:refreshAll,
       async submit(button, action) {
         const root = button.closest(selector);
-        if (!root || button.disabled || state(root).pending) return;
+        if (destroyed || !root || button.disabled || state(root).pending) return;
         const current = state(root);
         const label = button.textContent;
         current.pending = true;
         current.error = '';
+        options.motion?.cancel(root.querySelector('.parameter-feedback'));
         button.dataset.submitting = '1';
         button.setAttribute('aria-disabled', 'true');
         button.textContent = '应用中…';
@@ -103,10 +106,20 @@
           delete button.dataset.submitting;
           button.removeAttribute('aria-disabled');
           button.textContent = label;
-          if (root.isConnected) refresh(root);
+          if (!destroyed && root.isConnected) {
+            refresh(root);
+            const output = root.querySelector('.parameter-feedback');
+            // A newer draft, failure or readonly promotion wins over this reply.
+            if (!current.error && output.dataset.phase === 'applied') options.motion?.confirm(output);
+          }
         }
       },
-      destroy() { observer.disconnect(); doc.removeEventListener('input', onInput); },
+      destroy() {
+        destroyed = true;
+        doc.querySelectorAll('.parameter-feedback').forEach(output => options.motion?.cancel(output));
+        observer.disconnect();
+        doc.removeEventListener('input', onInput);
+      },
     };
   }
   function setReadonlyActions(buttons, readonly) {

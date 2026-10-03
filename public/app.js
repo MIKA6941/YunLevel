@@ -1347,7 +1347,7 @@ function renderLoopWorkspace(loops, cascades) {
 
 function wireControlWorkspace() {
   app.workspaceMotion = WorkspaceMotion.create(document);
-  app.parameterFeedback = ParameterFeedback.bind(document);
+  app.parameterFeedback = ParameterFeedback.bind(document, { motion:app.workspaceMotion });
   app.parameterSlider = ParameterSlider.bind(document, {
     motion:app.workspaceMotion,
     selector: '#loopCards input[data-field], #manualControls .field-grid input[type="number"]',

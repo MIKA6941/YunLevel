@@ -26,6 +26,7 @@
     function play(channel, target, frames, duration) {
       cancel(channel);
       if (paused() || !target?.isConnected || typeof target.animate !== 'function') return;
+      if (target.getClientRects && !target.getClientRects().length) return;
       // CSS owns the final visible state. No fill or inline transform can leak
       // from an interrupted animation into a reused form or popup.
       const animation = target.animate(frames, { duration, easing });
@@ -51,6 +52,12 @@
           { transform:'scale(0.985)', opacity:0.8 },
           { transform:'scale(1)', opacity:1 },
         ], 120);
+      },
+      confirm(target) {
+        play(target, target, [
+          { backgroundColor:'rgba(51, 205, 166, 0.16)' },
+          { backgroundColor:'rgba(51, 205, 166, 0)' },
+        ], 180);
       },
       cancel,
       destroy() {
