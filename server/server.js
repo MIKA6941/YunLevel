@@ -259,7 +259,10 @@ function parseCookies(req) {
   const header = req.headers.cookie || '';
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i > 0) {
+      try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); }
+      catch { throw Object.assign(new Error('Cookie 编码无效'), { statusCode: 400, code: 'INVALID_COOKIE' }); }
+    }
   }
   return out;
 }
@@ -294,17 +297,31 @@ function requireSimulationRole(req, res) {
 
 function readBody(req, limit = 1024 * 256) {
   return new Promise((resolve, reject) => {
-    let data = '';
+    const chunks = [];
+    let bytes = 0;
+    let exceeded = false;
     req.on('data', (chunk) => {
-      data += chunk;
-      if (data.length > limit) {
-        reject(new Error('request too large'));
-        req.destroy();
+      if (exceeded) return;
+      bytes += chunk.length;
+      if (bytes > limit) {
+        exceeded = true;
+        chunks.length = 0;
+        reject(Object.assign(new Error('请求内容超过大小限制'), { statusCode: 413, code: 'BODY_TOO_LARGE' }));
+      } else {
+        chunks.push(chunk);
       }
     });
     req.on('end', () => {
+      if (exceeded) return;
+      const data = Buffer.concat(chunks).toString('utf8');
       if (!data.trim()) return resolve({});
-      try { resolve(JSON.parse(data)); } catch (err) { reject(err); }
+      try {
+        const body = JSON.parse(data);
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('object required');
+        resolve(body);
+      } catch {
+        reject(Object.assign(new Error('请求必须是有效的 JSON 对象'), { statusCode: 400, code: 'INVALID_JSON' }));
+      }
     });
     req.on('error', reject);
   });
@@ -1126,11 +1143,15 @@ function buildTeacherCloudExport(classInfo, students, modelId = config.defaultMo
   return { buffer: buildZip(entries), uploadedCount, completeCount, modelNames };
 }
 async function mainHandler(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const pathname = decodeURIComponent(url.pathname);
-  const parts = pathname.split('/').filter(Boolean);
-
   try {
+    let url, pathname;
+    try {
+      url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      throw Object.assign(new Error('请求地址无效'), { statusCode: 400, code: 'INVALID_URL' });
+    }
+    const parts = pathname.split('/').filter(Boolean);
     if (req.method === 'GET' && pathname === '/api/health') {
       return sendJson(res, 200, {
         ok: true,
@@ -1643,7 +1664,10 @@ async function mainHandler(req, res) {
     return serveStatic(res, pathname);
   } catch (err) {
     console.error(err);
-    return sendJson(res, err.statusCode || 500, { error: err.message || '服务器内部错误' });
+    if (!res.headersSent && !res.destroyed) {
+      return sendJson(res, err.statusCode || 500, { code: err.code || 'INTERNAL_ERROR', error: err.message || '服务器内部错误' });
+    }
+    if (!res.destroyed) res.end();
   }
 }
 
@@ -1668,7 +1692,13 @@ function serveStatic(res, pathname) {
   });
 }
 
-const server = http.createServer(mainHandler);
+const server = http.createServer((req, res) => {
+  mainHandler(req, res).catch((err) => {
+    console.error('HTTP handler failed:', err);
+    if (!res.headersSent && !res.destroyed) sendJson(res, 500, { code: 'INTERNAL_ERROR', error: '服务器内部错误' });
+    else if (!res.destroyed) res.end();
+  });
+});
 server.listen(config.port, '0.0.0.0', () => {
   console.log(`YunLevel server listening on http://0.0.0.0:${config.port}`);
   console.log(`engine: ${config.enginePath}`);
