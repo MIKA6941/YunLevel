@@ -62,7 +62,7 @@
       '<label class="parameter-slider-infinity"><input type="checkbox"><span>关闭积分（inf）</span></label>' +
       '<p class="parameter-slider-status" id="' + id + '-status" role="status"></p>' +
       '<p class="parameter-slider-hint" id="' + id + '-hint">仅修改草稿，应用后生效。</p>' +
-      '<button type="button" class="parameter-slider-close" aria-label="关闭滑块" title="关闭滑块">×</button>';
+      '<button type="button" class="parameter-slider-close" aria-label="关闭滑块" title="关闭滑块"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>';
     const title = panel.querySelector('.parameter-slider-head label');
     const output = panel.querySelector('output');
     const slider = panel.querySelector('input[type="range"]');

@@ -180,10 +180,10 @@
             <h2>仿真状态</h2>
             <div class="sim-panel-actions">
               <span id="simTime" class="badge">t = 0 s</span>
-              <button id="simZoomOutBtn" class="icon-button" type="button" title="缩小仿真图" aria-label="缩小仿真图">−</button>
+              <button id="simZoomOutBtn" class="icon-button" type="button" title="缩小仿真图" aria-label="缩小仿真图"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
               <span id="simZoomValue" class="zoom-readout">100%</span>
-              <button id="simZoomInBtn" class="icon-button" type="button" title="放大仿真图" aria-label="放大仿真图">+</button>
-              <button id="simExpandBtn" class="icon-button" type="button" title="放大到全屏区域" aria-label="放大到全屏区域">⛶</button>
+              <button id="simZoomInBtn" class="icon-button" type="button" title="放大仿真图" aria-label="放大仿真图"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
+              <button id="simExpandBtn" class="icon-button" type="button" title="放大到全屏区域" aria-label="放大到全屏区域"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button>
               <button id="pidShowBtn" class="small-button hidden" type="button" title="显示 PID 计算过程">显示 PID</button>
             </div>
           </div>
@@ -217,7 +217,7 @@
                   <rect x="270" y="70" width="130" height="190" rx="8" fill="#152630" stroke="#8fb0c0" stroke-width="1.8"/>
                   <text x="335" y="100" text-anchor="middle" fill="#e8f4fa" font-size="14" font-weight="600">T1</text>
                   <rect x="288" y="120" width="94" height="120" rx="4" fill="#0a2030" stroke="#2bb89a" stroke-width="1.2"/>
-                  <rect x="288" y="175" width="94" height="65" rx="3" fill="#149a7b"/>
+                  <rect id="tankSvgFill1" x="288" y="240" width="94" height="0" rx="3" fill="#149a7b"/>
                   <text x="335" y="215" text-anchor="middle" fill="#d7fff0" font-size="11">LI101</text>
 
                   <!-- T1 出 → FV102 → T2 顶 -->
@@ -232,7 +232,7 @@
                   <rect x="530" y="70" width="130" height="190" rx="8" fill="#152630" stroke="#8fb0c0" stroke-width="1.8"/>
                   <text x="595" y="100" text-anchor="middle" fill="#e8f4fa" font-size="14" font-weight="600">T2</text>
                   <rect x="548" y="120" width="94" height="120" rx="4" fill="#0a2030" stroke="#2bb89a" stroke-width="1.2"/>
-                  <rect x="548" y="190" width="94" height="50" rx="3" fill="#149a7b"/>
+                  <rect id="tankSvgFill2" x="548" y="240" width="94" height="0" rx="3" fill="#149a7b"/>
                   <text x="595" y="220" text-anchor="middle" fill="#d7fff0" font-size="11">LI102</text>
 
                   <!-- T2 出 → FV103 → T3 顶 -->
@@ -247,7 +247,7 @@
                   <rect x="790" y="70" width="130" height="190" rx="8" fill="#152630" stroke="#8fb0c0" stroke-width="1.8"/>
                   <text x="855" y="100" text-anchor="middle" fill="#e8f4fa" font-size="14" font-weight="600">T3</text>
                   <rect x="808" y="120" width="94" height="120" rx="4" fill="#0a2030" stroke="#2bb89a" stroke-width="1.2"/>
-                  <rect x="808" y="205" width="94" height="35" rx="3" fill="#149a7b"/>
+                  <rect id="tankSvgFill3" x="808" y="240" width="94" height="0" rx="3" fill="#149a7b"/>
                   <text x="855" y="228" text-anchor="middle" fill="#d7fff0" font-size="11">LI103</text>
 
                   <!-- T3 出 → FV104 → 排水 -->

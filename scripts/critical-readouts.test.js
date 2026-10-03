@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { criticalReadouts } = require('../public/control-workspace');
 const { fitFrame } = require('../public/control-workspace');
+const { tankLevelGeometry } = require('../public/control-workspace');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -49,5 +50,14 @@ test('each tank measurement id belongs to exactly one visible metrics element', 
   const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
   for (const id of ['mL1','mL2','mL3','mQin','mQ12','mQ23','mQout','mPi']) {
     assert.equal(html.split(`id="${id}"`).length - 1, 1, id);
+  }
+});
+test('tank illustration tracks live levels instead of placeholder fill heights', () => {
+  assert.deepEqual(tankLevelGeometry(0), { y:240, height:0 });
+  assert.deepEqual(tankLevelGeometry(50), { y:180, height:60 });
+  assert.deepEqual(tankLevelGeometry(100), { y:120, height:120 });
+  assert.deepEqual(tankLevelGeometry(125), tankLevelGeometry(100));
+  for (const missing of [null, undefined, '', 'bad', NaN]) {
+    assert.deepEqual(tankLevelGeometry(missing), { y:240, height:0 });
   }
 });

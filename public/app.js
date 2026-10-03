@@ -1041,6 +1041,12 @@ function renderTankPid(state) {
   const levels = [state.h1, state.h2, state.h3];
   levels.forEach((lv, i) => {
     const lvNum = Math.max(0, Math.min(100, Number(lv) || 0));
+    const svgFill = $(`tankSvgFill${i + 1}`);
+    if (svgFill) {
+      const geometry = ControlWorkspace.tankLevelGeometry(lv);
+      svgFill.setAttribute('y', String(geometry.y));
+      svgFill.setAttribute('height', String(geometry.height));
+    }
     const fill = $(`tank${i + 1}Fill`);
     if (fill) {
       fill.style.height = `${lvNum}%`;
@@ -4399,6 +4405,15 @@ function wireRosterControls() {
 }
 
 function wireLogin() {
+  const setBusy = (form, busy) => {
+    form.setAttribute('aria-busy', String(busy));
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit) {
+      if (busy) submit.dataset.idleLabel = submit.textContent;
+      submit.textContent = busy ? '正在登录…' : submit.dataset.idleLabel || submit.textContent;
+      submit.disabled = busy;
+    }
+  };
   document.querySelectorAll('.login-tab').forEach((tab) => {
     tab.onclick = () => {
       document.querySelectorAll('.login-tab').forEach((x) => x.classList.toggle('active', x === tab));
@@ -4408,6 +4423,10 @@ function wireLogin() {
   });
   $('studentLoginForm').onsubmit = async (e) => {
     e.preventDefault();
+    const form = e.currentTarget;
+    if (form.getAttribute('aria-busy') === 'true') return;
+    setBusy(form, true);
+    $('loginError').textContent = '';
     try {
       await api('/api/login', { method: 'POST', body: JSON.stringify({
         role: 'student',
@@ -4419,14 +4438,20 @@ function wireLogin() {
       $('loginError').textContent = '';
       await connectStudent();
     } catch (err) { $('loginError').textContent = err.message; }
+    finally { setBusy(form, false); }
   };
   $('teacherLoginForm').onsubmit = async (e) => {
     e.preventDefault();
+    const form = e.currentTarget;
+    if (form.getAttribute('aria-busy') === 'true') return;
+    setBusy(form, true);
+    $('loginError').textContent = '';
     try {
       await api('/api/login', { method: 'POST', body: JSON.stringify({ role: 'teacher', teacherCode: $('teacherCode').value, model: $('teacherModel')?.value || 'tank' }) });
       $('loginError').textContent = '';
       await connectTeacher();
     } catch (err) { $('loginError').textContent = err.message; }
+    finally { setBusy(form, false); }
   };
   $('logoutBtn').onclick = async () => {
     app.loggingOut = true;

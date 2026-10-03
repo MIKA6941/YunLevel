@@ -74,6 +74,11 @@
     const scale = fit * zoom;
     return { scale, x:(viewport.width - world.width * scale) / 2, y:(viewport.height - world.height * scale) / 2 };
   }
+  function tankLevelGeometry(raw) {
+    const numeric = (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '')) && Number.isFinite(Number(raw));
+    const height = numeric ? Math.max(0, Math.min(100, Number(raw))) * 1.2 : 0;
+    return { y:240 - height, height };
+  }
   function criticalReadouts(model, tags, state) {
     const keys = model === 'hx' ? ['ti1104', 'sp', 'ti1103', 'fi1105'] : ['h1', 'h2', 'h3'];
     return keys.map(key => {
@@ -81,5 +86,5 @@
       return { key, ...measurementValue(tag, state?.[key]) };
     });
   }
-  return { SelectionStore, entries, parameterPolicy, measurementValue, fitFrame, criticalReadouts };
+  return { SelectionStore, entries, parameterPolicy, measurementValue, fitFrame, tankLevelGeometry, criticalReadouts };
 });

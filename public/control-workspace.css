@@ -58,6 +58,8 @@
 .sim-panel-actions { flex-wrap:wrap; }
 .loop-workspace label, #manualControls label { font-size:12px; }
 .loop-workspace input { min-width:0; font-size:14px; }
+.loop-workspace .loop-pv, .loop-workspace .loop-pv-row, .loop-workspace .mini { font-size:12px; }
+.sim-panel.expanded .critical-readouts, .sim-panel.expanded .measurement-details { display:none; }
 .loop-workspace-selection { overflow-wrap:anywhere; }
 .critical-readouts { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:16px; margin:20px 0 16px; }
 .critical-readouts > div { min-width:0; }
@@ -65,7 +67,7 @@
 .critical-readouts p { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
 .critical-readouts b { font-size:22px; line-height:1.25; font-weight:600; font-variant-numeric:tabular-nums; }
 .readout-unit { color:var(--muted); font-size:12px; }
-@media(max-width:1439px) {
+@media(width < 1440px) {
   #viewControl .control-grid, #viewControl .control-grid.pid-hidden { grid-template-columns:224px minmax(0,1fr); }
   #viewControl .control-panel { grid-row:1 / span 2; }
   #viewControl .loop-workspace { grid-column:2; grid-row:2; }
@@ -74,7 +76,7 @@
   .loop-workspace .loop-card .field-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .measurement-details .metric-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
 }
-@media(max-width:899px) {
+@media(width < 900px) {
   #viewControl .control-grid, #viewControl .control-grid.pid-hidden { display:flex; flex-direction:column; }
   #viewControl .control-grid > section { width:100%; }
   #viewControl .control-grid > .sim-panel.expanded { width:auto; }
