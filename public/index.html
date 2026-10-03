@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0E151D">
   <title>PID 云仿真</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/control-workspace.css">
@@ -20,14 +21,14 @@
       </div>
       <form id="studentLoginForm" class="login-form">
         <label>实验模型<select id="studentModel"><option value="tank">三级液位</option><option value="hx" class="hx-model-option hidden">换热器</option></select></label>
-        <label>班级码<input id="classCode" autocomplete="organization" required></label>
-        <label>学号<input id="studentId" autocomplete="username" required></label>
-        <label>姓名<input id="studentName" autocomplete="name" required></label>
+        <label>班级码<input id="classCode" name="classCode" autocomplete="organization" spellcheck="false" required></label>
+        <label>学号<input id="studentId" name="studentId" autocomplete="username" spellcheck="false" required></label>
+        <label>姓名<input id="studentName" name="studentName" autocomplete="name" required></label>
         <button class="primary" type="submit">进入仿真</button>
       </form>
       <form id="teacherLoginForm" class="login-form hidden">
         <label>实验模型<select id="teacherModel"><option value="tank">三级液位</option><option value="hx">换热器</option></select></label>
-        <label>教师口令<input id="teacherCode" type="password" required></label>
+        <label>教师口令<input id="teacherCode" name="teacherCode" type="password" autocomplete="current-password" required></label>
         <button class="primary" type="submit">进入教师端</button>
       </form>
       <div id="loginError" class="error"></div>
