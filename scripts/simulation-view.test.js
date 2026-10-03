@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { bindPan } = require('../public/simulation-view');
+const { bindPan, Camera } = require('../public/simulation-view');
 
 function surface() {
   const events = new Map();
@@ -81,4 +81,97 @@ test('dragging still works when pointer capture is unavailable', () => {
   f.host.fire('pointerup');
   assert.equal(f.pan().x, 70);
   assert.equal(f.viewport.classList.contains('panning'), false);
+});
+
+const geometry = { width: 1100, height: 470, viewportWidth: 720, viewportHeight: 478 };
+function fittedCamera(overrides = {}) {
+  const camera = new Camera();
+  camera.update({ ...geometry, ...overrides });
+  return camera;
+}
+function near(got, expected) { assert.ok(Math.abs(got - expected) < 1e-7, `${got} != ${expected}`); }
+test('the full diagram fits and stays centered in desktop, narrow and short viewports', () => {
+  for (const [width, height] of [[720, 478], [320, 478], [1500, 260], [2200, 1200]]) {
+    const camera = fittedCamera({ viewportWidth: width, viewportHeight: height });
+    const frame = camera.frame();
+    assert.ok(frame.width <= width - camera.padding() * 2 + 1e-7);
+    assert.ok(frame.height <= height - camera.padding() * 2 + 1e-7);
+    near(frame.x + frame.width / 2, width / 2);
+    near(frame.y + frame.height / 2, height / 2);
+  }
+});
+test('zoom preserves the world point at the center and stops at fit and 180%', () => {
+  const camera = fittedCamera();
+  const center = { ...camera.center };
+  camera.setScale(1.2);
+  near(camera.center.x, center.x);
+  near(camera.center.y, center.y);
+  camera.setScale(100);
+  assert.equal(camera.scale, 1.8);
+  camera.setScale(-100);
+  near(camera.scale, camera.fitScale());
+});
+test('large drags cannot move the diagram beyond either edge or create blank viewports', () => {
+  const camera = fittedCamera();
+  camera.setScale(1.8);
+  for (const position of [{ x: -1e6, y: -1e6 }, { x: 1e6, y: 1e6 }]) {
+    camera.panTo(position);
+    const frame = camera.frame();
+    assert.ok(frame.x <= camera.padding() + 1e-7);
+    assert.ok(frame.x + frame.width >= geometry.viewportWidth - camera.padding() - 1e-7);
+    assert.ok(frame.y <= camera.padding() + 1e-7);
+    assert.ok(frame.y + frame.height >= geometry.viewportHeight - camera.padding() - 1e-7);
+  }
+});
+test('fit recovers a zoomed and panned diagram and follows later panel resizing', () => {
+  const camera = fittedCamera();
+  camera.setScale(1.6);
+  camera.panTo({ x: -200, y: -100 });
+  camera.fit();
+  assert.equal(camera.autoFit, true);
+  camera.update({ ...geometry, viewportWidth: 450 });
+  near(camera.scale, (450 - 24) / 1100);
+  near(camera.center.x, 550);
+  near(camera.center.y, 235);
+});
+test('manual zoom and the world focus survive resize when within the new bounds', () => {
+  const camera = fittedCamera();
+  camera.setScale(1.6);
+  camera.panTo({ x: -400, y: -140 });
+  const center = { ...camera.center };
+  camera.update({ ...geometry, viewportWidth: 750, viewportHeight: 500 });
+  assert.equal(camera.scale, 1.6);
+  near(camera.center.x, center.x);
+  near(camera.center.y, center.y);
+});
+test('hidden panels and non-finite input cannot erase a valid camera or poison transforms', () => {
+  const camera = fittedCamera();
+  const before = camera.frame();
+  assert.equal(camera.update({ ...geometry, viewportWidth: 0 }), false);
+  assert.equal(camera.update({ ...geometry, height: NaN }), false);
+  camera.setScale(Infinity);
+  camera.panTo({ x: NaN, y: 0 });
+  assert.deepEqual(camera.frame(), before);
+});
+test('boundary and centering invariants hold across fit, zoom and extreme pan combinations', () => {
+  for (const width of [180, 320, 720, 1500]) {
+    for (const height of [120, 300, 478, 900]) {
+      const camera = fittedCamera({ viewportWidth: width, viewportHeight: height });
+      for (const zoom of [0.2, 0.8, 1.2, 1.8]) {
+        camera.setScale(zoom);
+        for (const offset of [-1e6, 0, 1e6]) {
+          camera.panTo({ x: offset, y: offset });
+          const frame = camera.frame();
+          for (const [position, size, viewport] of [[frame.x, frame.width, width], [frame.y, frame.height, height]]) {
+            assert.ok(Number.isFinite(position));
+            if (size <= viewport - camera.padding() * 2) near(position, (viewport - size) / 2);
+            else {
+              assert.ok(position <= camera.padding() + 1e-7);
+              assert.ok(position + size >= viewport - camera.padding() - 1e-7);
+            }
+          }
+        }
+      }
+    }
+  }
 });

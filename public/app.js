@@ -30,8 +30,7 @@ const app = {
   teacherClassFilter: '',
   // 教师端看板模型筛选：'all' | 'tank' | 'hx'。导出、云端读取都跟随它。
   teacherModelFilter: 'all',
-  simScale: 1,
-  simPan: { x: 0, y: 0 },
+  simCamera: new SimulationView.Camera(),
   showProcessWires: true,
   showSecondaryLabels: true,
   schemeMode: null,
@@ -3595,22 +3594,28 @@ function getRosterImportRows() {
 }
 
 function applySimScale() {
-  const visuals = [$('processVisual'), $('hxProcessVisual')].filter(Boolean);
-  if (!visuals.length) return;
-  app.simScale = clamp(Number(app.simScale) || 1, 0.8, 1.8);
-  const pan = app.simPan || { x: 0, y: 0 };
-  const labelScale = clamp(1 / app.simScale, 0.86, 1.2);
-  for (const visual of visuals) {
-    visual.style.transformOrigin = 'center center';
-    visual.style.setProperty('--sim-label-scale', labelScale.toFixed(3));
-    visual.style.transform = `translate(${Number(pan.x) || 0}px, ${Number(pan.y) || 0}px) scale(${app.simScale})`;
-  }
+  const viewport = document.querySelector('.process-viewport');
+  const visual = [$('processVisual'), $('hxProcessVisual')].find(el => el && !el.classList.contains('hidden'));
+  if (!viewport || !visual) return;
+  const camera = getSimCamera();
+  if (!camera.update({ width: visual.offsetWidth, height: visual.offsetHeight,
+    viewportWidth: viewport.clientWidth, viewportHeight: viewport.clientHeight })) return;
+  const frame = camera.frame();
+  visual.style.transformOrigin = '0 0';
+  visual.style.setProperty('--sim-label-scale', clamp(1 / frame.scale, 0.86, 1.2).toFixed(3));
+  visual.style.transform = `translate(${frame.x}px, ${frame.y}px) scale(${frame.scale})`;
   const readout = $('simZoomValue');
-  if (readout) readout.textContent = `${Math.round(app.simScale * 100)}%`;
+  if (readout) readout.textContent = `${Math.round(frame.scale * 100)}%`;
+  if ($('simZoomOutBtn')) $('simZoomOutBtn').disabled = frame.scale <= camera.fitScale() + 1e-9;
+  if ($('simZoomInBtn')) $('simZoomInBtn').disabled = frame.scale >= 1.8 - 1e-9;
+}
+
+function getSimCamera() {
+  return app.simCamera;
 }
 
 function setSimScale(nextScale) {
-  app.simScale = clamp(Number(nextScale) || 1, 0.8, 1.8);
+  getSimCamera().setScale(nextScale);
   applySimScale();
 }
 
@@ -3622,7 +3627,7 @@ function setSimExpanded(expanded) {
   panel.classList.toggle('expanded', expanded);
   backdrop.classList.toggle('hidden', !expanded);
   document.body.classList.toggle('sim-expanded', expanded);
-  app.simPan = { x: 0, y: 0 };
+  getSimCamera().fit();
   app.simInteraction?.cancel();
   if (button) {
     button.classList.toggle('on', expanded);
@@ -3667,12 +3672,14 @@ function wirePidPanelControls() {
 function wireSimControls() {
   const zoomOut = $('simZoomOutBtn');
   const zoomIn = $('simZoomInBtn');
+  const fit = $('simFitBtn');
   const expand = $('simExpandBtn');
   const backdrop = $('simBackdrop');
   const wireToggle = $('simWiresBtn');
   const viewport = document.querySelector('.process-viewport');
-  if (zoomOut) zoomOut.onclick = () => setSimScale(app.simScale - 0.1);
-  if (zoomIn) zoomIn.onclick = () => setSimScale(app.simScale + 0.1);
+  if (zoomOut) zoomOut.onclick = () => setSimScale(getSimCamera().scale - 0.1);
+  if (zoomIn) zoomIn.onclick = () => setSimScale(getSimCamera().scale + 0.1);
+  if (fit) fit.onclick = () => { app.simInteraction?.cancel(); getSimCamera().fit(); applySimScale(); };
   if (expand) expand.onclick = () => setSimExpanded(!document.querySelector('.sim-panel')?.classList.contains('expanded'));
   if (wireToggle) wireToggle.onclick = () => {
     if (!wireToggle) return;
@@ -3690,9 +3697,15 @@ function wireSimControls() {
   if (backdrop) backdrop.onclick = () => setSimExpanded(false);
   if (viewport) {
     app.simInteraction = SimulationView.bindPan(viewport, {
-      getPan: () => app.simPan,
-      onPan: (pan) => { app.simPan = pan; applySimScale(); },
+      getPan: () => getSimCamera().frame(),
+      onPan: (pan) => { getSimCamera().panTo(pan); applySimScale(); },
     });
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => {
+        app.simInteraction?.cancel();
+        applySimScale();
+      }).observe(viewport);
+    }
   }
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && document.querySelector('.sim-panel')?.classList.contains('expanded')) setSimExpanded(false);
