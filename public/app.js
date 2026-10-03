@@ -1515,19 +1515,25 @@ function renderLoops(state) {
         </div>
         <span class="mini" data-casc-state="${index}">${casc.outerManual ? '主环手动' : '主环自动'} / ${casc.innerManual ? '副环手动' : '副环自动'}</span>
       </div>
-      <div class="loop-pv-row">
-        <span>主环 PV <b data-reading="outerPv">${cascadePvText(casc, 'outer')}</b></span>
-        <span>副环 PV <b data-reading="innerPv">${cascadePvText(casc, 'inner')}</b></span>
-      </div>
-      <div class="field-grid">
+      <fieldset class="cascade-group">
+        <legend>主环 · ${pvName(casc.outer)}</legend>
+        <p class="loop-pv">PV <b data-reading="outerPv">${cascadePvText(casc, 'outer')}</b></p>
+        <div class="field-grid">
         <label>主环 SP ${outerUnit}<input data-casc="${index}" data-field="outerSp" type="number" value="${number(casc.outerSp, 1)}"></label>
         <label>主环 Kp<input data-casc="${index}" data-field="outerKp" type="number" step="0.01" value="${number(casc.outerKp, 3)}"></label>
         <label>主环 Ti<input data-casc="${index}" data-field="outerTi" type="text" inputmode="decimal" placeholder="有限正数或 inf" value="${tiText(casc.outerTi)}"></label>
         <label>主环 Td<input data-casc="${index}" data-field="outerTd" type="number" value="${number(casc.outerTd, 1)}"></label>
+        </div>
+      </fieldset>
+      <fieldset class="cascade-group">
+        <legend>副环 · ${pvName(casc.inner)}</legend>
+        <p class="loop-pv">PV <b data-reading="innerPv">${cascadePvText(casc, 'inner')}</b></p>
+        <div class="field-grid">
         <label>副环 Kp<input data-casc="${index}" data-field="innerKp" type="number" step="0.01" value="${number(casc.innerKp, 3)}"></label>
         <label>副环 Ti<input data-casc="${index}" data-field="innerTi" type="text" inputmode="decimal" placeholder="有限正数或 inf" value="${tiText(casc.innerTi)}"></label>
         <label>副环 Td<input data-casc="${index}" data-field="innerTd" type="number" value="${number(casc.innerTd, 1)}"></label>
-      </div>
+        </div>
+      </fieldset>
       <div class="button-row">
         <button data-casc-apply="${index}" class="primary small-button">应用参数</button>
         <button data-casc-auto="${index}" data-manual="${casc.outerManual ? 0 : 1}">${casc.outerManual ? '主环投自动' : '主环投手动'}</button>
