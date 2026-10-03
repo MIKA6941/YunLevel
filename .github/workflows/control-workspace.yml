@@ -3,7 +3,13 @@ name: Control workspace
 on:
   pull_request:
   push:
-    branches: [main]
+    paths:
+      - 'public/**'
+      - 'scripts/test-controls.js'
+      - 'scripts/control-workspace.test.js'
+      - 'scripts/parameter-slider.test.js'
+      - 'package.json'
+      - '.github/workflows/control-workspace.yml'
   workflow_dispatch:
 
 permissions:
