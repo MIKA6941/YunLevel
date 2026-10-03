@@ -29,6 +29,7 @@ for (const file of [
   'public/parameter-slider.js',
   'public/parameter-feedback.js',
   'public/workspace-motion.js',
+  'public/process-devices.js',
 ]) {
   run(['--check', file]);
 }
@@ -40,4 +41,5 @@ run([
   'scripts/critical-readouts.test.js',
   'scripts/parameter-feedback.test.js',
   'scripts/workspace-motion.test.js',
+  'scripts/process-devices.test.js',
 ]);

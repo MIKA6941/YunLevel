@@ -747,6 +747,7 @@ function setConnection(ok, text) {
 }
 
 function showLogin(error = '') {
+  app.processDevices?.close();
   app.parameterSlider?.close();
   app.loopSelection.clear();
   $('loopCards')?.replaceChildren();
@@ -784,6 +785,7 @@ function showApp() {
 }
 
 function switchView(view) {
+  app.processDevices?.close();
   app.parameterSlider?.close();
   if (view === 'score') {
     const score = app.state?.score || {};
@@ -1223,6 +1225,7 @@ function updateState(state) {
   renderScore(state);
   updateScoreTabAccess();
   renderStudentCloudStatus();
+  app.processDevices?.refresh();
   if (app.view === 'curves') scheduleStudentCharts();
 }
 
@@ -1352,6 +1355,12 @@ function wireControlWorkspace() {
     motion:app.workspaceMotion,
     selector: '#loopCards input[data-field], #manualControls .field-grid input[type="number"]',
     getPolicy: parameterSliderPolicy,
+  });
+  app.processDevices = ProcessDevices.bind(document, {
+    getContext:() => ({ model:workspaceModel(), state:app.state, account:app.me, view:app.view,
+      entries:ControlWorkspace.entries(app.state?.loops || [], Number(app.state?.mode) === 1 ? app.state?.cascades || [] : []) }),
+    getPan:() => ({ ...app.simPan }),
+    panTo:pan => { app.simPan = pan; applySimScale(); },
   });
   document.querySelectorAll('[data-control-tab]').forEach(button => {
     button.onclick = () => {
