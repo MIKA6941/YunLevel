@@ -1,0 +1,75 @@
+/* Experiment workspace: compact library, diagram, then the selected editor. */
+#viewControl .control-toolbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:12px; padding:10px 14px; }
+.control-toolbar > .panel-head { margin:0; gap:10px; }
+.control-toolbar h2 { white-space:nowrap; }
+.control-toolbar > .button-row { flex:1 1 auto; }
+.project-tools { margin-left:auto; font-size:12px; }
+.project-tools > summary, .loop-builder > summary { cursor:pointer; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:var(--panel-2); }
+.project-tools[open] { flex:1 1 100%; }
+.project-tools .project-row { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.project-tools .project-row .project-slot { grid-column:auto; }
+.project-tools #cloudStateLine { margin:8px 0 0; }
+#viewControl .control-grid, #viewControl .control-grid.pid-hidden { grid-template-columns:280px minmax(0,1fr); gap:12px; }
+#viewControl .control-panel { grid-column:1; grid-row:1 / span 2; min-width:0; }
+#viewControl .sim-panel { grid-column:2; grid-row:1; min-width:0; }
+#viewControl .loop-workspace { grid-column:2; grid-row:2; min-width:0; }
+.sidebar-tabs { display:flex; gap:6px; margin-bottom:12px; }
+.sidebar-tabs > button { flex:1; }
+.sidebar-tabs > button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); background:rgba(22,184,138,.12); }
+.loop-list { display:grid; gap:7px; margin-bottom:12px; }
+.loop-list > button { display:grid; gap:3px; text-align:left; min-width:0; white-space:normal; padding:9px 10px; background:var(--panel-2); }
+.loop-list > button[aria-pressed="true"] { border-color:var(--accent); background:rgba(22,184,138,.10); }
+.loop-list-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.loop-list-top b { font-size:12px; }
+.loop-list-mode { font-size:11px; color:var(--muted); }
+.loop-list-path { font-size:12px; overflow-wrap:anywhere; }
+.loop-list-pv { font-size:11px; color:var(--ok); font-variant-numeric:tabular-nums; }
+.loop-builder .segmented { margin:12px 0; }
+.loop-builder .builder-grid { margin-bottom:4px; }
+#manualControls .field-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+#manualControls label { min-width:0; }
+.loop-workspace > .panel-head { margin-bottom:10px; }
+.loop-workspace-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(240px,.42fr); gap:14px; align-items:start; }
+.loop-workspace.pid-hidden .loop-workspace-grid { grid-template-columns:minmax(0,1fr); }
+.loop-workspace .loop-cards { margin:0; }
+.loop-workspace .loop-card { border:0; padding:0; background:transparent; }
+.loop-workspace .loop-card .field-grid { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.loop-workspace .loop-card-head { margin-bottom:10px; flex-wrap:wrap; }
+.loop-workspace .loop-card-title { gap:4px; }
+.loop-workspace .loop-card .button-row button { flex:0 1 auto; min-height:32px; }
+.loop-workspace .pid-panel { grid-column:auto; border:0; border-left:1px solid var(--line); border-radius:0; box-shadow:none; padding:0 0 0 14px; background:transparent; min-width:0; }
+.loop-workspace .pid-panel h2 { font-size:12px; }
+.loop-workspace .pid-panel .panel-head { margin-bottom:8px; }
+.loop-workspace .pid-item { padding:8px; }
+.loop-workspace .pid-item h3 { font-size:11px; margin-bottom:7px; }
+.loop-workspace .formula { font-size:11px; }
+.loop-workspace .term-grid { gap:5px; }
+.measurement-details { margin-top:10px; color:var(--muted); font-size:12px; }
+.measurement-details > summary { cursor:pointer; }
+.measurement-details .metric-grid { margin-top:10px; grid-template-columns:repeat(6,minmax(0,1fr)); }
+.measurement-details .metric-grid > div { padding:8px; min-width:0; }
+#viewControl .sim-panel:not(.expanded) .process-viewport { min-height:260px; height:clamp(280px,40vh,360px); }
+@media(max-width:1200px) {
+  #viewControl .control-grid, #viewControl .control-grid.pid-hidden { grid-template-columns:240px minmax(0,1fr); }
+  .loop-workspace-grid { grid-template-columns:minmax(0,1fr); }
+  .loop-workspace .pid-panel { border-left:0; border-top:1px solid var(--line); padding:12px 0 0; }
+  .loop-workspace .loop-card .field-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .measurement-details .metric-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+}
+@media(max-width:720px) {
+  #viewControl .control-grid, #viewControl .control-grid.pid-hidden { display:flex; flex-direction:column; }
+  #viewControl .control-grid > section { width:100%; }
+  #viewControl .control-panel { order:0; }
+  #viewControl .sim-panel { order:1; }
+  #viewControl .loop-workspace { order:2; }
+  .loop-list { grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); }
+  .project-tools .project-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .control-toolbar > .button-row button { flex:1 1 auto; }
+  .project-tools { margin-left:0; }
+  .loop-workspace .loop-card .field-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .measurement-details .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(pointer:coarse) {
+  .loop-workspace input, #manualControls input { font-size:16px; min-height:44px; }
+  .sidebar-tabs button, .loop-list button { min-height:44px; }
+}

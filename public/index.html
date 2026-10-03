@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PID 云仿真</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/control-workspace.css">
 </head>
 <body>
   <section id="loginView" class="login-shell">
@@ -59,10 +60,9 @@
     <div id="simBackdrop" class="sim-backdrop hidden"></div>
 
     <main id="viewControl" class="view active">
-      <div class="control-grid">
-        <section class="panel control-panel">
+      <section class="panel control-toolbar">
           <div class="panel-head">
-            <h2>控制区</h2>
+            <h2>运行控制</h2>
             <span id="runState" class="badge">未启动</span>
           </div>
           <div class="button-row">
@@ -72,7 +72,9 @@
             <button id="presetBtn" class="teacher-only hidden">推荐工况</button>
             <button id="highScoreBtn" class="teacher-only hidden">高分模板</button>
           </div>
-          <div class="project-row">
+          <details class="project-tools">
+            <summary>工程 / 方案</summary>
+            <div class="project-row">
             <button id="currentSaveBtn">保存当前状态</button>
             <button id="currentRestoreBtn">恢复上传保存状态</button>
             <label class="project-slot">云端方案
@@ -95,24 +97,24 @@
             <button id="exportParamsCsvBtn">导出参数 CSV</button>
             <button id="exportParamsExcelBtn">导出参数 Excel</button>
           </div>
-          <div class="segmented">
+          </details>
+      </section>
+      <div class="control-grid">
+        <section class="panel control-panel">
+  <div class="panel-head"><h2>回路与手操</h2></div>
+  <div class="sidebar-tabs" role="group" aria-label="控制区内容">
+    <button type="button" data-control-tab="loops" aria-controls="loopLibrary" aria-pressed="true">回路</button>
+    <button type="button" data-control-tab="manual" aria-controls="manualControls" aria-pressed="false">手操</button>
+  </div>
+          <div id="loopLibrary">
+            <div id="loopList" class="loop-list" aria-label="已搭建回路"></div>
+            <details id="loopBuilder" class="loop-builder">
+              <summary>搭建回路</summary>
+              <div class="segmented">
             <button data-scheme="0" class="active">单回路</button>
             <button data-scheme="1">串级</button>
           </div>
-          <div class="field-grid">
-            <label>P101 泵开度 %<input id="pumpInput" type="number" min="0" max="100" step="1" value="0"></label>
-            <label>FV101 手操 %<input id="fv101Input" type="number" min="0" max="100" step="1" value="0"></label>
-            <label>FV102 手操 %<input id="fv102Input" type="number" min="0" max="100" step="1" value="0"></label>
-            <label>FV103 手操 %<input id="fv103Input" type="number" min="0" max="100" step="1" value="0"></label>
-            <label>FV104 手操 %<input id="fv104Input" type="number" min="0" max="100" step="1" value="0"></label>
-          </div>
-          <div class="button-row compact">
-            <button id="applyManualBtn">应用手操</button>
-            <button id="biasBtn" class="toggle teacher-only hidden">前馈偏置：关</button>
-            <button id="clearLoopsBtn" class="danger">清空回路</button>
-          </div>
 
-          <div class="section-title">搭建回路</div>
           <div class="builder-grid">
             <label>回路类型
               <select id="buildType">
@@ -150,7 +152,24 @@
             </label>
             <button id="addLoopBtn" class="primary">添加</button>
           </div>
-          <div id="loopCards" class="loop-cards"></div>
+          </details>
+  </div>
+          <div id="manualControls" class="hidden">
+            <div class="field-grid">
+            <label>P101 泵开度 %<input id="pumpInput" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV101 手操 %<input id="fv101Input" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV102 手操 %<input id="fv102Input" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV103 手操 %<input id="fv103Input" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV104 手操 %<input id="fv104Input" type="number" min="0" max="100" step="1" value="0"></label>
+          </div>
+          <div class="button-row compact">
+            <button id="applyManualBtn">应用手操</button>
+            <button id="biasBtn" class="toggle teacher-only hidden">前馈偏置：关</button>
+            <button id="clearLoopsBtn" class="danger">清空回路</button>
+          </div>
+
+          </div>
+
         </section>
 
         <section class="panel sim-panel">
@@ -394,7 +413,7 @@
               </div>
             </div>
 </div>
-          <div id="metricGrid" class="metric-grid">
+          <details class="measurement-details"><summary>全部测量值</summary><div id="metricGrid" class="metric-grid">
             <div><span>LI101</span><b id="mL1">0.0%</b></div>
             <div><span>LI102</span><b id="mL2">0.0%</b></div>
             <div><span>LI103</span><b id="mL3">0.0%</b></div>
@@ -404,15 +423,20 @@
             <div><span>出口流量</span><b id="mQout">0.00 L/min</b></div>
             <div><span>PI101</span><b id="mPi">0.0 kPa</b></div>
           </div>
-        </section>
+        </details></section>
 
-        <section class="panel pid-panel">
+        <section id="loopWorkspace" class="panel loop-workspace" aria-label="所选回路参数">
+  <div class="panel-head"><h2>回路参数</h2><span id="loopWorkspaceSelection" class="muted small"></span></div>
+          <div class="loop-workspace-grid">
+            <div id="loopCards" class="loop-cards"></div>
+            <section class="panel pid-panel">
           <div class="panel-head">
             <h2>PID 计算过程</h2>
             <button id="pidToggleBtn" class="small-button" type="button" title="隐藏 PID 计算过程">隐藏计算</button>
           </div>
           <div id="pidProcess" class="pid-process empty">暂未添加回路</div>
-        </section>
+        </section></div>
+</section>
       </div>
     </main>
 
@@ -765,6 +789,7 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="/vendor/xlsx.full.min.js"></script>
+  <script src="/control-workspace.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

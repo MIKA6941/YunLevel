@@ -14,6 +14,7 @@ const app = {
   me: null,
   view: 'control',
   state: null,
+  loopSelection: new ControlWorkspace.SelectionStore(),
   history: {},
   streams: { level: new Set(['h1', 'h2', 'h3', 'sp1', 'sp2', 'sp3']), flow: new Set(['qin', 'q12', 'q23', 'qout']), valve: new Set(['pump', 'fv101', 'fv102', 'fv103', 'fv104']) },
   simEventSource: null,
@@ -36,7 +37,7 @@ const app = {
   showSecondaryLabels: true,
   schemeMode: null,
   simDrag: null,
-  pidPanelVisible: true,
+  pidPanelVisible: false,
   historyClock: { offset: 0, lastRawT: null, lastDisplayT: null },
   cloudSettings: { allowStudentUpload: false, updatedAt: null },
   cloudProjects: [],
@@ -728,6 +729,9 @@ function setConnection(ok, text) {
 }
 
 function showLogin(error = '') {
+  app.loopSelection.clear();
+  $('loopCards')?.replaceChildren();
+  if ($('loopCards')) delete $('loopCards').dataset.signature;
   switchView('control');
   app.selectedStudent = null;
   app.me = null;
@@ -1251,6 +1255,75 @@ function loopStructureSignature(loops, cascades) {
   ].join('|');
 }
 
+function workspaceModel() { return app.me?.model || 'tank'; }
+
+function workspaceSelected(kind, index) {
+  const selected = app.loopSelection.current(workspaceModel());
+  return selected?.kind === kind && selected.index === index;
+}
+
+function renderLoopWorkspace(loops, cascades) {
+  const items = ControlWorkspace.entries(loops, cascades);
+  const model = workspaceModel();
+  const selected = app.loopSelection.update(model, items);
+  const list = $('loopList');
+  const signature = items.map(item => item.key).join('|');
+  if (list.dataset.signature !== `${model}|${signature}`) {
+    list.dataset.signature = `${model}|${signature}`;
+    list.replaceChildren();
+    items.forEach(item => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.workspaceSelect = item.key;
+      button.innerHTML = '<span class="loop-list-top"><b></b><span class="loop-list-mode"></span></span><span class="loop-list-path"></span><span class="loop-list-pv"></span>';
+      button.onclick = () => {
+        app.loopSelection.select(model, item.key);
+        if (app.state) {
+          renderLoops(app.state);
+          renderPidProcess(app.state);
+        }
+      };
+      list.appendChild(button);
+    });
+    if (!items.length) list.innerHTML = '<span class="muted small">暂无回路，展开“搭建回路”添加。</span>';
+  }
+  items.forEach(item => {
+    const button = Array.from(list.children).find(el => el.dataset.workspaceSelect === item.key);
+    if (!button) return;
+    const value = item.value;
+    button.setAttribute('aria-pressed', String(selected?.key === item.key));
+    button.querySelector('b').textContent = `${item.kind === 'loop' ? '单回路' : '串级'} ${item.index + 1}`;
+    button.querySelector('.loop-list-mode').textContent = item.kind === 'loop'
+      ? `${value.manual ? '手动' : '自动'} / ${value.action > 0 ? '正作用' : '反作用'}`
+      : `${value.outerManual ? '主环手动' : '主环自动'} / ${value.innerManual ? '副环手动' : '副环自动'}`;
+    button.querySelector('.loop-list-path').textContent = item.kind === 'loop'
+      ? `${mvName(value.mv)} → ${pvName(value.pv)}`
+      : `${mvName(value.mv)} → ${pvName(value.inner)} → ${pvName(value.outer)}`;
+    button.querySelector('.loop-list-pv').textContent = item.kind === 'loop'
+      ? `PV ${loopPvText(value)}`
+      : `主环 ${cascadePvText(value, 'outer')} · 副环 ${cascadePvText(value, 'inner')}`;
+  });
+  $('loopCards').querySelectorAll('[data-loop-card],[data-casc-card]').forEach(card => {
+    const loop = card.dataset.loopCard;
+    const active = loop !== undefined ? workspaceSelected('loop', Number(loop)) : workspaceSelected('casc', Number(card.dataset.cascCard));
+    card.classList.toggle('hidden', !active);
+  });
+  $('loopWorkspaceSelection').textContent = selected
+    ? `共 ${items.length} 个回路 · 正在编辑${selected.kind === 'loop' ? '单回路' : '串级'} ${selected.index + 1}`
+    : '尚未搭建回路';
+}
+
+function wireControlWorkspace() {
+  document.querySelectorAll('[data-control-tab]').forEach(button => {
+    button.onclick = () => {
+      const manual = button.dataset.controlTab === 'manual';
+      $('manualControls').classList.toggle('hidden', !manual);
+      $('loopLibrary').classList.toggle('hidden', manual);
+      document.querySelectorAll('[data-control-tab]').forEach(tab => tab.setAttribute('aria-pressed', String(tab === button)));
+    };
+  });
+}
+
 function setLoopCardInput(card, field, value) {
   const input = card?.querySelector(`[data-field="${field}"]`);
   if (!input || document.activeElement === input || input.dataset.dirty === '1') return;
@@ -1346,13 +1419,15 @@ function renderLoops(state) {
   if (!loops.length && !cascades.length) {
     if (wrap.dataset.signature !== 'empty') {
       wrap.dataset.signature = 'empty';
-      wrap.innerHTML = '<div class="muted">暂未搭建回路。先在上方添加。应用参数后生效。</div>';
+      wrap.innerHTML = '<div class="muted">暂未搭建回路。展开左侧“搭建回路”添加，应用参数后生效。</div>';
     }
+    renderLoopWorkspace(loops, cascades);
     return;
   }
-  const signature = loopStructureSignature(loops, cascades);
+  const signature = `${workspaceModel()}|${loopStructureSignature(loops, cascades)}`;
   if (wrap.dataset.signature === signature) {
     syncLoopCards(loops, cascades);
+    renderLoopWorkspace(loops, cascades);
     return;
   }
   wrap.dataset.signature = signature;
@@ -1451,6 +1526,7 @@ function renderLoops(state) {
     btn.onclick = () => sendCommand(`CASC_DEL ${Number(btn.dataset.cascDel)}`);
   });
   syncLoopCards(loops, cascades);
+  renderLoopWorkspace(loops, cascades);
 }
 
 const PARAM_INPUT_SELECTOR = '.field-grid input,[data-loop][data-field],[data-casc][data-field]';
@@ -1937,6 +2013,7 @@ function renderPidProcess(state) {
   box.className = 'pid-process';
   const parts = [];
   loops.forEach((p, i) => {
+    if (!workspaceSelected('loop', i)) return;
     const sum = Number(p.pTerm || 0) + Number(p.iTerm || 0) + Number(p.dTerm || 0);
     const u = Number(p.uBias || 0) - Number(p.action) * sum;
     parts.push(`<div class="pid-item">
@@ -1947,6 +2024,7 @@ function renderPidProcess(state) {
     </div>`);
   });
   cascades.forEach((p, i) => {
+    if (!workspaceSelected('casc', i)) return;
     parts.push(`<div class="pid-item">
       <h3>串级 ${i + 1}：${mvName(p.mv)}</h3>
       <div class="formula">主环 ${pvName(p.outer)}：e=${number(p.outerE, 3)}，P=${number(p.outerP, 3)}，I=${number(p.outerI, 3)}，D=${number(p.outerD, 3)}<br>
@@ -3638,6 +3716,7 @@ function setPidPanelVisible(visible) {
   const grid = document.querySelector('.control-grid');
   if (panel) panel.classList.toggle('pid-panel-hidden', !app.pidPanelVisible);
   if (grid) grid.classList.toggle('pid-hidden', !app.pidPanelVisible);
+  $('loopWorkspace')?.classList.toggle('pid-hidden', !app.pidPanelVisible);
   $('pidShowBtn')?.classList.toggle('hidden', app.pidPanelVisible);
 }
 
@@ -3657,6 +3736,7 @@ function applySecondaryLabelVisibility() {
 }
 
 function wirePidPanelControls() {
+  wireControlWorkspace();
   const hide = $('pidToggleBtn');
   const show = $('pidShowBtn');
   if (hide) hide.onclick = () => setPidPanelVisible(false);
