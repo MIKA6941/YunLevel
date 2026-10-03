@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PID 云仿真</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section id="loginView" class="login-shell">
+    <div class="login-panel">
+      <div class="brand-mark">YL</div>
+      <h1 id="loginTitle">PID 云仿真</h1>
+      <p class="muted">同一服务器，独立会话；登录后每位学生拥有自己的仿真状态。</p>
+      <div class="login-tabs">
+        <button class="login-tab active" data-role="student">学生登录</button>
+        <button class="login-tab" data-role="teacher">教师登录</button>
+      </div>
+      <form id="studentLoginForm" class="login-form">
+        <label>实验模型<select id="studentModel"><option value="tank">三级液位</option><option value="hx" class="hx-model-option hidden">换热器</option></select></label>
+        <label>班级码<input id="classCode" autocomplete="organization" required></label>
+        <label>学号<input id="studentId" autocomplete="username" required></label>
+        <label>姓名<input id="studentName" autocomplete="name" required></label>
+        <button class="primary" type="submit">进入仿真</button>
+      </form>
+      <form id="teacherLoginForm" class="login-form hidden">
+        <label>实验模型<select id="teacherModel"><option value="tank">三级液位</option><option value="hx">换热器</option></select></label>
+        <label>教师口令<input id="teacherCode" type="password" required></label>
+        <button class="primary" type="submit">进入教师端</button>
+      </form>
+      <div id="loginError" class="error"></div>
+    </div>
+  </section>
+
+  <section id="appView" class="app hidden">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <div class="brand-mark small">YL</div>
+        <div>
+          <strong id="appTitle">PID 云仿真</strong>
+          <div id="userLine" class="muted small"></div>
+        </div>
+      </div>
+      <nav id="mainTabs" class="tabs">
+        <button class="tab active" data-view="control">控制 / 仿真</button>
+        <button class="tab" data-view="curves">曲线</button>
+        <button class="tab" data-view="score">评分</button>
+        <button class="tab teacher-only hidden" data-view="teacher">教师看板</button>
+        <button class="tab teacher-only hidden" data-view="roster">班级管理</button>
+      </nav>
+      <div class="topbar-actions">
+        <span id="modelBadge" class="badge">三级液位</span>
+        <span id="connectionDot" class="status-dot"></span>
+        <span id="connectionText" class="small muted">连接中</span>
+        <button id="logoutBtn" class="ghost">退出</button>
+      </div>
+    </header>
+
+    <div id="simBackdrop" class="sim-backdrop hidden"></div>
+
+    <main id="viewControl" class="view active">
+      <div class="control-grid">
+        <section class="panel control-panel">
+          <div class="panel-head">
+            <h2>控制区</h2>
+            <span id="runState" class="badge">未启动</span>
+          </div>
+          <div class="button-row">
+            <button id="startBtn" class="primary small">启动</button>
+            <button id="pauseBtn">暂停</button>
+            <button id="resetBtn">回到冷态</button>
+            <button id="presetBtn" class="teacher-only hidden">推荐工况</button>
+            <button id="highScoreBtn" class="teacher-only hidden">高分模板</button>
+          </div>
+          <div class="project-row">
+            <button id="currentSaveBtn">保存当前状态</button>
+            <button id="currentRestoreBtn">恢复上传保存状态</button>
+            <label class="project-slot">云端方案
+              <select id="projectSlot">
+                <option value="1">导出云端</option>
+                <option value="2">云端 2</option>
+                <option value="3">云端 3</option>
+                <option value="4">云端 4</option>
+              </select>
+            </label>
+            <button id="cloudUploadBtn">上传云端</button>
+            <button id="cloudRestoreBtn">从云端下载</button>
+            <button id="projectExportBtn" class="hidden">导出工程</button>
+            <label class="file-pick project-import">导入工程
+              <input id="projectImportInput" type="file" accept=".ylproj,application/json,text/json">
+            </label>
+          </div>
+          <div id="cloudStateLine" class="muted small">状态：正在读取...</div>
+          <div class="button-row compact export-actions hidden">
+            <button id="exportParamsCsvBtn">导出参数 CSV</button>
+            <button id="exportParamsExcelBtn">导出参数 Excel</button>
+          </div>
+          <div class="segmented">
+            <button data-scheme="0" class="active">单回路</button>
+            <button data-scheme="1">串级</button>
+          </div>
+          <div class="field-grid">
+            <label>P101 泵开度 %<input id="pumpInput" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV101 手操 %<input id="fv101Input" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV102 手操 %<input id="fv102Input" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV103 手操 %<input id="fv103Input" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>FV104 手操 %<input id="fv104Input" type="number" min="0" max="100" step="1" value="0"></label>
+          </div>
+          <div class="button-row compact">
+            <button id="applyManualBtn">应用手操</button>
+            <button id="biasBtn" class="toggle teacher-only hidden">前馈偏置：关</button>
+            <button id="clearLoopsBtn" class="danger">清空回路</button>
+          </div>
+
+          <div class="section-title">搭建回路</div>
+          <div class="builder-grid">
+            <label>回路类型
+              <select id="buildType">
+                <option value="loop">单回路</option>
+                <option value="casc">串级</option>
+              </select>
+            </label>
+            <label>被控量 / 主环
+              <select id="buildPv">
+                <option value="0">LI101 1#罐液位</option>
+                <option value="1">LI102 2#罐液位</option>
+                <option value="2" selected>LI103 3#罐液位</option>
+                <option value="3">FI101 给水流量</option>
+                <option value="4">FI102 级间流量1</option>
+                <option value="5">FI103 级间流量2</option>
+              </select>
+            </label>
+            <label>阀门
+              <select id="buildMv">
+                <option value="0">FV101 给水总阀</option>
+                <option value="1" selected>FV102 级间阀1</option>
+                <option value="2">FV103 级间阀2</option>
+                <option value="3">FV104 出口阀</option>
+              </select>
+            </label>
+            <label class="casc-only hidden">副环
+              <select id="buildInner">
+                <option value="3" selected>FI101 给水流量</option>
+                <option value="4">FI102 级间流量1</option>
+                <option value="5">FI103 级间流量2</option>
+                <option value="0">LI101 1#罐液位</option>
+                <option value="1">LI102 2#罐液位</option>
+                <option value="2">LI103 3#罐液位</option>
+              </select>
+            </label>
+            <button id="addLoopBtn" class="primary">添加</button>
+          </div>
+          <div id="loopCards" class="loop-cards"></div>
+        </section>
+
+        <section class="panel sim-panel">
+          <div class="panel-head">
+            <h2>仿真状态</h2>
+            <div class="sim-panel-actions">
+              <span id="simTime" class="badge">t = 0 s</span>
+              <button id="simZoomOutBtn" class="icon-button" type="button" title="缩小仿真图" aria-label="缩小仿真图">−</button>
+              <span id="simZoomValue" class="zoom-readout">100%</span>
+              <button id="simZoomInBtn" class="icon-button" type="button" title="放大仿真图" aria-label="放大仿真图">+</button>
+              <button id="simExpandBtn" class="icon-button" type="button" title="放大到全屏区域" aria-label="放大到全屏区域">⛶</button>
+              <button id="pidShowBtn" class="small-button hidden" type="button" title="显示 PID 计算过程">显示 PID</button>
+            </div>
+          </div>
+          <div class="process-viewport">
+            <div id="simWarning" class="sim-warning hidden"></div>
+            <div id="processVisual" class="process-visual">
+              <div id="processWatermark" class="sim-watermark hidden"></div>
+              <svg id="loopWires" class="loop-wires" aria-hidden="true"></svg>
+              <div class="tank-schematic">
+                <svg class="hx-svg" viewBox="0 0 1100 360" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <marker id="tkArr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+                    </marker>
+                  </defs>
+
+                  <!-- 水池 → P101 → FV101 -->
+                  <rect x="12" y="150" width="70" height="32" rx="4" fill="#0f1c24" stroke="#3d8fb0" stroke-width="1.5"/>
+                  <text x="47" y="171" text-anchor="middle" fill="#8fd4ff" font-size="11" font-weight="600">水池</text>
+                  <path d="M82 166 H 120" stroke="#4aa3c8" stroke-width="2.5" fill="none" color="#4aa3c8" marker-end="url(#tkArr)"/>
+                  <circle cx="145" cy="166" r="18" fill="#152630" stroke="#8fb0c0" stroke-width="1.5"/>
+                  <text x="145" y="170" text-anchor="middle" fill="#e8f4fa" font-size="10" font-weight="600">P101</text>
+                  <path d="M163 166 H 195" stroke="#4aa3c8" stroke-width="2.5" fill="none"/>
+                  <g transform="translate(215 166)">
+                    <path d="M-12 -10 L0 0 L-12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                    <path d="M12 -10 L0 0 L12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                  </g>
+                  <path d="M227 166 H 270" stroke="#4aa3c8" stroke-width="2.5" fill="none" color="#4aa3c8" marker-end="url(#tkArr)"/>
+
+                  <!-- T1 -->
+                  <rect x="270" y="70" width="130" height="190" rx="8" fill="#152630" stroke="#8fb0c0" stroke-width="1.8"/>
+                  <text x="335" y="100" text-anchor="middle" fill="#e8f4fa" font-size="14" font-weight="600">T1</text>
+                  <rect x="288" y="120" width="94" height="120" rx="4" fill="#0a2030" stroke="#2bb89a" stroke-width="1.2"/>
+                  <rect x="288" y="175" width="94" height="65" rx="3" fill="#149a7b"/>
+                  <text x="335" y="215" text-anchor="middle" fill="#d7fff0" font-size="11">LI101</text>
+
+                  <!-- T1 出 → FV102 → T2 顶 -->
+                  <path d="M400 200 H 455" stroke="#4aa3c8" stroke-width="2.5" fill="none"/>
+                  <g transform="translate(475 200)">
+                    <path d="M-12 -10 L0 0 L-12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                    <path d="M12 -10 L0 0 L12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                  </g>
+                  <path d="M487 200 H 530" stroke="#4aa3c8" stroke-width="2.5" fill="none" color="#4aa3c8" marker-end="url(#tkArr)"/>
+
+                  <!-- T2 -->
+                  <rect x="530" y="70" width="130" height="190" rx="8" fill="#152630" stroke="#8fb0c0" stroke-width="1.8"/>
+                  <text x="595" y="100" text-anchor="middle" fill="#e8f4fa" font-size="14" font-weight="600">T2</text>
+                  <rect x="548" y="120" width="94" height="120" rx="4" fill="#0a2030" stroke="#2bb89a" stroke-width="1.2"/>
+                  <rect x="548" y="190" width="94" height="50" rx="3" fill="#149a7b"/>
+                  <text x="595" y="220" text-anchor="middle" fill="#d7fff0" font-size="11">LI102</text>
+
+                  <!-- T2 出 → FV103 → T3 顶 -->
+                  <path d="M660 200 H 715" stroke="#4aa3c8" stroke-width="2.5" fill="none"/>
+                  <g transform="translate(735 200)">
+                    <path d="M-12 -10 L0 0 L-12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                    <path d="M12 -10 L0 0 L12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                  </g>
+                  <path d="M747 200 H 790" stroke="#4aa3c8" stroke-width="2.5" fill="none" color="#4aa3c8" marker-end="url(#tkArr)"/>
+
+                  <!-- T3 -->
+                  <rect x="790" y="70" width="130" height="190" rx="8" fill="#152630" stroke="#8fb0c0" stroke-width="1.8"/>
+                  <text x="855" y="100" text-anchor="middle" fill="#e8f4fa" font-size="14" font-weight="600">T3</text>
+                  <rect x="808" y="120" width="94" height="120" rx="4" fill="#0a2030" stroke="#2bb89a" stroke-width="1.2"/>
+                  <rect x="808" y="205" width="94" height="35" rx="3" fill="#149a7b"/>
+                  <text x="855" y="228" text-anchor="middle" fill="#d7fff0" font-size="11">LI103</text>
+
+                  <!-- T3 出 → FV104 → 排水 -->
+                  <path d="M920 200 H 975" stroke="#4aa3c8" stroke-width="2.5" fill="none"/>
+                  <g transform="translate(995 200)">
+                    <path d="M-12 -10 L0 0 L-12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                    <path d="M12 -10 L0 0 L12 10 Z" fill="#243844" stroke="#9bc0d0" stroke-width="1.5"/>
+                  </g>
+                  <path d="M1007 200 H 1050" stroke="#4aa3c8" stroke-width="2.5" fill="none" color="#4aa3c8" marker-end="url(#tkArr)"/>
+                  <rect x="1050" y="184" width="60" height="32" rx="4" fill="#0f1c24" stroke="#3d8fb0" stroke-width="1.5"/>
+                  <text x="1080" y="205" text-anchor="middle" fill="#8fd4ff" font-size="11" font-weight="600">排水</text>
+
+                  <!-- 进水箭头到 T1 顶 -->
+                  <path d="M270 166 H 248 V 100 H 300" stroke="#4aa3c8" stroke-width="2" fill="none" color="#4aa3c8" marker-end="url(#tkArr)"/>
+                </svg>
+
+                <!-- 阀/泵角标（不在管线上压阀） -->
+                <div class="hx-valve-tag" id="pumpNode" style="left:11%;top:22%">
+                  <span>P101</span><b id="vPump">0%</b><em class="driver-badge manual">手操</em>
+                </div>
+                <div class="hx-valve-tag" id="fv101Node" style="left:18%;top:22%">
+                  <span>FV101</span><b id="vFv101">0%</b><em id="fv101Driver" class="driver-badge manual">未用</em>
+                </div>
+                <div class="hx-valve-tag" id="fv102Node" style="left:42%;top:22%">
+                  <span>FV102</span><b id="vFv102">0%</b><em id="fv102Driver" class="driver-badge manual">未用</em>
+                </div>
+                <div class="hx-valve-tag" id="fv103Node" style="left:64%;top:22%">
+                  <span>FV103</span><b id="vFv103">0%</b><em id="fv103Driver" class="driver-badge manual">未用</em>
+                </div>
+                <div class="hx-valve-tag" id="fv104Node" style="left:88%;top:22%">
+                  <span>FV104</span><b id="vFv104">0%</b><em id="fv104Driver" class="driver-badge manual">未用</em>
+                </div>
+
+                <!-- 液位/SP 兼容 id（隐藏，由 renderTankPid 更新） -->
+                <div class="hidden" id="tank1Node">
+                  <div id="tank1Fill"></div>
+                  <div id="tank1SpMarker"><i></i><span id="tank1SpLabel"></span></div>
+                  <b id="vH1"></b><small id="vSp1"></small><b id="mL1"></b>
+                </div>
+                <div class="hidden" id="tank2Node">
+                  <div id="tank2Fill"></div>
+                  <div id="tank2SpMarker"><i></i><span id="tank2SpLabel"></span></div>
+                  <b id="vH2"></b><small id="vSp2"></small><b id="mL2"></b>
+                </div>
+                <div class="hidden" id="tank3Node">
+                  <div id="tank3Fill"></div>
+                  <div id="tank3SpMarker"><i></i><span id="tank3SpLabel"></span></div>
+                  <b id="vH3"></b><small id="vSp3"></small><b id="mL3"></b>
+                </div>
+                <span class="hidden" id="mQin"></span>
+                <span class="hidden" id="mQ12"></span>
+                <span class="hidden" id="mQ23"></span>
+                <span class="hidden" id="mQout"></span>
+                <span class="hidden" id="mPi"></span>
+              </div>
+            </div>
+          <div id="hxProcessVisual" class="process-visual hx-visual hidden">
+              <div id="hxWatermark" class="sim-watermark hidden"></div>
+              <svg id="hxLoopWires" class="loop-wires" aria-hidden="true"></svg>
+              <div class="hx-schematic" aria-label="换热器工艺简图">
+                <svg class="hx-svg" viewBox="0 0 1100 380" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <marker id="hxArr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M0 0 L10 5 L0 10 z" fill="#e05545"/>
+                    </marker>
+                    <marker id="hxArrC" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M0 0 L10 5 L0 10 z" fill="#3db8e8"/>
+                    </marker>
+                  </defs>
+
+                  <!-- 蒸汽壳侧：左进右出 -->
+                  <text x="12" y="72" fill="#ff8f7c" font-size="13" font-weight="600">过热蒸汽</text>
+                  <path d="M12 110 H88" stroke="#e05545" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+                  <circle cx="118" cy="110" r="20" fill="#12202a" stroke="#e05545" stroke-width="2"/>
+                  <text x="118" y="115" text-anchor="middle" fill="#ffd2c8" font-size="11" font-weight="700">TI1103</text>
+                  <path d="M138 110 H248" stroke="#e05545" stroke-width="3.2" fill="none" marker-end="url(#hxArr)"/>
+
+                  <!-- E1102 -->
+                  <rect x="250" y="40" width="320" height="170" rx="12" fill="#152630" stroke="#8fb0c0" stroke-width="2"/>
+                  <line x1="300" y1="52" x2="300" y2="198" stroke="#7a9aaa" stroke-width="2.5"/>
+                  <line x1="520" y1="52" x2="520" y2="198" stroke="#7a9aaa" stroke-width="2.5"/>
+                  <!-- 管束 -->
+                  <line x1="300" y1="78" x2="520" y2="78" stroke="#3db8e8" stroke-width="2.2" opacity="0.4"/>
+                  <line x1="300" y1="100" x2="520" y2="100" stroke="#3db8e8" stroke-width="2.2" opacity="0.4"/>
+                  <line x1="300" y1="138" x2="520" y2="138" stroke="#3db8e8" stroke-width="5" opacity="0.95" marker-end="url(#hxArrC)"/>
+                  <line x1="300" y1="176" x2="520" y2="176" stroke="#3db8e8" stroke-width="2.2" opacity="0.4"/>
+                  <text x="410" y="28" text-anchor="middle" fill="#e8f4fa" font-size="15" font-weight="700">E1102 换热器</text>
+                  <!-- 壳侧蒸汽示意 -->
+                  <path d="M250 110 H570" stroke="#e05545" stroke-width="2.2" stroke-dasharray="7 5" opacity="0.3" fill="none"/>
+
+                  <!-- 蒸汽出口 -->
+                  <path d="M570 110 H618" stroke="#e05545" stroke-width="3.2" fill="none"/>
+                  <circle cx="648" cy="110" r="20" fill="#12202a" stroke="#e05545" stroke-width="2"/>
+                  <text x="648" y="115" text-anchor="middle" fill="#ffd2c8" font-size="11" font-weight="700">TI1104</text>
+                  <path d="M668 110 H712" stroke="#e05545" stroke-width="3.2" fill="none"/>
+                  <circle cx="742" cy="110" r="20" fill="#12202a" stroke="#e05545" stroke-width="2"/>
+                  <text x="742" y="115" text-anchor="middle" fill="#ffd2c8" font-size="11" font-weight="700">FI1105</text>
+                  <path d="M762 110 H818" stroke="#e05545" stroke-width="3.2" fill="none"/>
+                  <g transform="translate(852 110)">
+                    <path d="M-16 -13 L0 0 L-16 13 Z" fill="#243844" stroke="#e05545" stroke-width="2"/>
+                    <path d="M16 -13 L0 0 L16 13 Z" fill="#243844" stroke="#e05545" stroke-width="2"/>
+                    <line x1="0" y1="0" x2="0" y2="-20" stroke="#e05545" stroke-width="2"/>
+                    <line x1="-8" y1="-20" x2="8" y2="-20" stroke="#e05545" stroke-width="2"/>
+                  </g>
+                  <path d="M868 110 H1040" stroke="#e05545" stroke-width="3.2" fill="none" marker-end="url(#hxArr)"/>
+                  <text x="970" y="72" fill="#ff8f7c" font-size="13" font-weight="600">过热蒸汽</text>
+
+                  <!-- 冷却水管侧：进 → 穿管束 → 出 -->
+                  <text x="12" y="268" fill="#8fd4ff" font-size="13" font-weight="600">冷却水</text>
+                  <path d="M12 300 H88" stroke="#3db8e8" stroke-width="3" fill="none" stroke-linecap="round"/>
+                  <g transform="translate(122 300)">
+                    <path d="M-15 -12 L0 0 L-15 12 Z" fill="#243844" stroke="#3db8e8" stroke-width="2"/>
+                    <path d="M15 -12 L0 0 L15 12 Z" fill="#243844" stroke="#3db8e8" stroke-width="2"/>
+                    <line x1="0" y1="0" x2="0" y2="-18" stroke="#3db8e8" stroke-width="2"/>
+                    <line x1="-7" y1="-18" x2="7" y2="-18" stroke="#3db8e8" stroke-width="2"/>
+                  </g>
+                  <path d="M138 300 H208" stroke="#3db8e8" stroke-width="3" fill="none"/>
+                  <circle cx="238" cy="300" r="20" fill="#12202a" stroke="#3db8e8" stroke-width="2"/>
+                  <text x="238" y="305" text-anchor="middle" fill="#b9e6ff" font-size="11" font-weight="700">FI1102</text>
+                  <!-- 抬升进入管程 -->
+                  <path d="M258 300 H280 V138 H300" stroke="#3db8e8" stroke-width="3" fill="none" stroke-linejoin="round" marker-end="url(#hxArrC)"/>
+                  <!-- 管程穿越已在 E1102 内加粗画出 -->
+                  <!-- 右侧引出 -->
+                  <path d="M520 138 H540 V300 H700" stroke="#3db8e8" stroke-width="3" fill="none" stroke-linejoin="round" marker-end="url(#hxArrC)"/>
+                  <text x="712" y="305" fill="#8fd4ff" font-size="12" font-weight="600">冷却水出</text>
+
+                  <text x="410" y="356" text-anchor="middle" fill="#7a93a4" font-size="11">热源扰动 d_hot（教师可配）</text>
+                </svg>
+
+                <!-- 标签：紧贴仪表/阀下方 -->
+                <div class="hx-tag-card hot" id="hxInstTi1103" style="left:4%;top:36%">
+                  <span class="n">TI1103</span><b id="hxInstTi1103Value">400.0 ℃</b>
+                </div>
+                <div class="hx-tag-card hot" id="hxInstTi1104" style="left:53%;top:36%">
+                  <span class="n">TI1104</span><b id="hxInstTi1104Value">400.0 ℃</b>
+                </div>
+                <div class="hx-tag-card hot" id="hxInstFi1105" style="left:63%;top:36%">
+                  <span class="n">FI1105</span><b id="hxInstFi1105Value">0.00</b>
+                </div>
+                <div class="hx-tag-card hot" id="hxFV1105Node" style="left:73%;top:36%">
+                  <span class="n">FV1105</span><b id="hxVFv1105">0%</b><em id="hxFv1105Driver" class="driver-badge manual">未用</em>
+                </div>
+                <div class="hx-tag-card cool" id="hxFV1102Node" style="left:4%;top:78%">
+                  <span class="n">FV1102</span><b id="hxVFv1102">0%</b><em id="hxFv1102Driver" class="driver-badge manual">未用</em>
+                </div>
+                <div class="hx-tag-card cool" id="hxInstFi1102" style="left:15%;top:78%">
+                  <span class="n">FI1102</span><b id="hxInstFi1102Value">0.00</b>
+                </div>
+
+                <div class="hidden" id="hxHV1102Node"><span class="n">HV1102</span><b id="hxVHv1102">0%</b><em id="hxHv1102Driver" class="driver-badge manual">未用</em></div>
+                <div class="hidden" id="hxFV1101Node"><span class="n">FV1101</span><b id="hxVFv1101">0%</b><em id="hxFv1101Driver" class="driver-badge manual">未用</em></div>
+                <div class="hidden" id="hxFurnaceNode">
+                  <b id="hxFuelReadout"></b><em id="hxFuelDriver"></em>
+                </div>
+                <div class="hidden" id="hxShellNode">
+                  <strong id="hxTi1104Readout"></strong><span id="hxTi1104Set"></span>
+                  <em id="hxDeltaText"></em><i><span id="hxLevelFill"></span></i><small id="hxLevelText"></small>
+                </div>
+                <span class="hidden" id="hxSpfReadout"></span>
+                <span class="hidden" id="hxTi1103Readout"></span>
+                <span class="hidden" id="hxMwReadout"></span>
+                <span class="hidden" id="hxTwaterReadout"></span>
+                <span class="hidden" id="hxQhxReadout"></span>
+                <span class="hidden" id="hxFuelFlowReadout"></span>
+                <span class="hidden" id="hxFi1105Readout"></span>
+              </div>
+            </div>
+</div>
+          <div id="metricGrid" class="metric-grid">
+            <div><span>LI101</span><b id="mL1">0.0%</b></div>
+            <div><span>LI102</span><b id="mL2">0.0%</b></div>
+            <div><span>LI103</span><b id="mL3">0.0%</b></div>
+            <div><span>FI101</span><b id="mQin">0.00 L/min</b></div>
+            <div><span>FI102</span><b id="mQ12">0.00 L/min</b></div>
+            <div><span>FI103</span><b id="mQ23">0.00 L/min</b></div>
+            <div><span>出口流量</span><b id="mQout">0.00 L/min</b></div>
+            <div><span>PI101</span><b id="mPi">0.0 kPa</b></div>
+          </div>
+        </section>
+
+        <section class="panel pid-panel">
+          <div class="panel-head">
+            <h2>PID 计算过程</h2>
+            <button id="pidToggleBtn" class="small-button" type="button" title="隐藏 PID 计算过程">隐藏计算</button>
+          </div>
+          <div id="pidProcess" class="pid-process empty">暂未添加回路</div>
+        </section>
+      </div>
+    </main>
+
+    <main id="viewCurves" class="view">
+      <section class="panel curve-workspace">
+        <div class="curve-nav">
+          <div class="curve-tabs" role="tablist" aria-label="曲线页切换">
+            <button class="active" data-curve-tab="level" role="tab">液位曲线</button>
+            <button data-curve-tab="flow" role="tab">流量曲线</button>
+            <button data-curve-tab="valve" role="tab">开度曲线</button>
+          </div>
+          <div class="curve-actions">
+            <button id="curveExportBtn" class="hidden">导出图片</button>
+            <button id="curveLatestBtn">最新视图</button>
+            <button id="annToggleBtn" class="primary">隐藏标注</button>
+            <button id="curveClearBtn" class="danger">清空曲线</button>
+          </div>
+        </div>
+
+        <div class="curve-stage active" data-curve-stage="level">
+          <div class="curve-toolbar">
+            <div class="legend">
+              <button data-series="h1" class="active">LI101</button>
+              <button data-series="h2" class="active">LI102</button>
+              <button data-series="h3" class="active">LI103</button>
+              <button data-series="sp1" class="active">SP1</button>
+              <button data-series="sp2" class="active">SP2</button>
+              <button data-series="sp3" class="active">SP3</button>
+            </div>
+          </div>
+          <canvas id="levelChart" class="curve-canvas" width="1200" height="520" title="拖动坐标轴缩放，拖动绘图区平移，拖动虚线标注位置"></canvas>
+        </div>
+
+        <div class="curve-stage" data-curve-stage="flow">
+          <div class="curve-toolbar">
+            <div class="legend">
+              <button data-series="qin" class="active">FI101</button>
+              <button data-series="q12" class="active">FI102</button>
+              <button data-series="q23" class="active">FI103</button>
+              <button data-series="qout" class="active">出口</button>
+              <label class="y-max">Y 上限<input id="flowYMax" type="number" min="1" max="20" step="0.5" placeholder="自动"></label>
+            </div>
+          </div>
+          <canvas id="flowChart" class="curve-canvas" width="1200" height="520" title="拖动坐标轴缩放，拖动绘图区平移，拖动虚线标注位置"></canvas>
+        </div>
+
+        <div class="curve-stage" data-curve-stage="valve">
+          <div class="curve-toolbar">
+            <div class="legend">
+              <button data-series="pump" class="active">P101</button>
+              <button data-series="fv101" class="active">FV101</button>
+              <button data-series="fv102" class="active">FV102</button>
+              <button data-series="fv103" class="active">FV103</button>
+              <button data-series="fv104" class="active">FV104</button>
+            </div>
+          </div>
+          <canvas id="valveChart" class="curve-canvas" width="1200" height="520" title="拖动坐标轴缩放，拖动绘图区平移，拖动虚线标注位置"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <main id="viewScore" class="view">
+      <section class="panel score-hero">
+        <div>
+          <span class="eyebrow">SCORE</span>
+          <h2 id="scoreTitle">评分未开始</h2>
+          <p id="scoreSubtitle" class="muted">在控制区选择评分方案后才能开始。</p>
+          <p id="scoreEndTime" class="muted small hidden"></p>
+        </div>
+        <div class="score-number"><b id="scoreTotal">0.0</b><span>总分</span></div>
+      </section>
+      <div class="score-grid">
+        <div class="score-card"><span>操作</span><b id="scoreOp">0.0</b></div>
+        <div class="score-card"><span>控制</span><b id="scoreCtrl">0.0</b></div>
+        <div class="score-card"><span>安全</span><b id="scoreSafe">0.0</b></div>
+        <div class="score-card"><span>收益</span><b id="scoreBenefit">0.0</b></div>
+      </div>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>评分控制</h2>
+          <div class="button-row">
+            <button id="scoreOffBtn">关闭评分</button>
+            <button id="scoreTankBtn">单罐评分</button>
+            <button id="scoreSystemBtn">系统评分</button>
+            <button id="scoreStartBtn" class="primary">开始评分</button>
+          </div>
+        </div>
+        <section class="panel teacher-only hidden" id="teacherScoreConfig" style="margin-top:12px">
+              <div class="panel-head"><h2>评分要求（仅教师）</h2>
+                <div class="score-system-switch">
+                  <span>评分系统</span>
+                  <button id="scoreSystemToggle" class="toggle" type="button">评分系统：关</button>
+                  <span class="muted small" id="scoreSystemHint">关闭时才能修改评分细则</span>
+                </div>
+              </div>
+
+              <div class="score-pick-row">
+                <div class="score-pick-group">
+                  <span class="score-pick-label">评分对象</span>
+                  <div class="segmented" id="scoreObjPick">
+                    <button type="button" data-score-obj="tank">储罐</button>
+                    <button type="button" data-score-obj="hx" class="active">换热器</button>
+                  </div>
+                </div>
+                <div class="score-pick-group">
+                  <span class="score-pick-label">评分方案</span>
+                  <div class="segmented" id="scoreModePick">
+                    <button type="button" data-score-mode="unit" class="active">单对象</button>
+                    <button type="button" data-score-mode="sys">系统</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="score-fields" data-obj="tank" data-mode="unit">
+                <h3 class="score-cfg-title">储罐 · 单对象</h3>
+                <div class="score-config-grid">
+                  <label>考核罐
+                    <select id="scoreTankPick">
+                      <option value="0">LI101 1#罐</option>
+                      <option value="1">LI102 2#罐</option>
+                      <option value="2">LI103 3#罐</option>
+                    </select>
+                  </label>
+                  <label>目标 SP (%)<input id="scoreSpTank" type="number" min="0" max="100" value="50"></label>
+                  <label>液位带宽 (%)<input id="scoreBandTank" type="number" min="0.5" max="10" step="0.5" value="2"></label>
+                </div>
+                <div class="hidden" id="scoreSpStore">
+                  <input id="scoreSp1" type="number" value="50">
+                  <input id="scoreSp2" type="number" value="50">
+                  <input id="scoreSp3" type="number" value="50">
+                </div>
+                <p class="muted small">单对象考一个罐：先选罐位，再改该罐 SP 与液位带宽。</p>
+              </div>
+
+              <div class="score-fields" data-obj="tank" data-mode="sys">
+                <h3 class="score-cfg-title">储罐 · 系统</h3>
+                <div class="score-config-grid">
+                  <label>1#罐 目标 SP (%)<input id="sysSp1" type="number" min="0" max="100" value="50"></label>
+                  <label>2#罐 目标 SP (%)<input id="sysSp2" type="number" min="0" max="100" value="50"></label>
+                  <label>3#罐 目标 SP (%)<input id="sysSp3" type="number" min="0" max="100" value="50"></label>
+                  <label>液位带宽 (%)<input id="sysBandTank" type="number" min="0.5" max="10" step="0.5" value="2"></label>
+                  <label>扰动时刻 (s)<input id="scoreDistAt" type="number" min="0" max="3000" value="300"></label>
+                  <label>扰动阀 (0-3)<input id="scoreDistMv" type="number" min="0" max="3" value="3"></label>
+                  <label>扰动幅度 (%)<input id="scoreDistDelta" type="number" min="-100" max="100" value="-20"></label>
+                </div>
+                <p class="muted small">系统：三罐全流程。单对象的分罐 SP 也存于此（scoreSp1/2/3）。</p>
+              </div>
+
+              <div class="score-fields active" data-obj="hx" data-mode="unit">
+                <h3 class="score-cfg-title">换热器 · 单对象</h3>
+                <div class="score-config-grid">
+                  <label>换热 目标 SP (℃)<input id="scoreSpHx" type="number" min="200" max="600" value="400"></label>
+                  <label>换热 初始温度 (℃)<input id="scoreInitTempHx" type="number" min="150" max="650" value="400"></label>
+                  <label>换热带宽 (℃)<input id="scoreBandHx" type="number" min="0.5" max="20" step="0.5" value="5"></label>
+                </div>
+                <p class="muted small">换热器：目标 SP、初始温度（默认 400℃）、换热带宽。</p>
+              </div>
+
+              <div class="score-fields" data-obj="hx" data-mode="sys">
+                <h3 class="score-cfg-title">换热器 · 系统</h3>
+                <div class="score-config-grid">
+                  <label>换热 目标 SP (℃)<input id="sysSpHx" type="number" min="200" max="600" value="400"></label>
+                  <label>换热带宽 (℃)<input id="sysBandHx" type="number" min="0.5" max="20" step="0.5" value="5"></label>
+                </div>
+                <p class="muted small">换热系统：本期不考扰动；只配 SP 与换热带宽。</p>
+              </div>
+
+              <div class="score-fields active" data-obj="*" data-mode="unit">
+                <div class="score-config-grid">
+                  <label>单对象限时 (s)<input id="scoreDurUnit" type="number" min="60" max="3600" value="480"></label>
+                </div>
+              </div>
+              <div class="score-fields" data-obj="*" data-mode="sys">
+                <div class="score-config-grid">
+                  <label>系统限时 (s)<input id="scoreDurSys" type="number" min="60" max="7200" value="1500"></label>
+                </div>
+              </div>
+
+              <button id="scoreApplyBtn" class="primary" style="margin-top:10px">应用评分要求</button>
+              <p class="muted small" id="scoreConfigHint">先选评分对象和方案，再点「应用」；开始评分前请先应用。</p>
+            </section>
+            <div id="scoreTargetRow" class="segmented score-target">
+          <button data-score-tank="0" class="active">LI101 1#罐</button>
+          <button data-score-tank="1">LI102 2#罐</button>
+          <button data-score-tank="2">LI103 3#罐</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead id="scoreTableHead"><tr><th>对象</th><th>总分</th><th>稳态</th><th>MAE</th><th>超调</th><th>低限时间</th><th>溢流</th></tr></thead>
+            <tbody id="tankScoreRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <main id="viewTeacher" class="view">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>在线学生</h2>
+          <label class="compact-label">班级筛选<select id="teacherClassFilter"><option value="">全部班级</option></select></label>
+          <label class="compact-label">模型筛选<select id="teacherModelFilter">
+            <option value="all" selected>全部模型</option>
+            <option value="tank">三级液位</option>
+            <option value="hx">换热器</option>
+          </select></label>
+          <div class="button-row">
+            <button id="toggleHxModelBtn" class="toggle">换热器模型：关闭</button>
+            <button id="toggleStudentUploadBtn" class="toggle">学生上传：关闭</button>
+            <button id="refreshTeacherBtn">刷新</button>
+            <button id="exportTeacherParamsBtn" class="hidden">导出筛选学生参数 CSV</button>
+            <button id="exportRecordsBtn">导出评分 CSV</button>
+            <button id="clearRecordsBtn" class="danger">清空记录</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="teacher-overview-table">
+            <thead id="teacherOverviewHead"><tr><th>学号</th><th>姓名</th><th>班级</th><th>模型</th><th>状态</th><th>关键测量</th><th>回路</th><th>评分</th><th>操作</th></tr></thead>
+            <tbody id="teacherRows"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>学生云端状态</h2>
+          <span id="teacherBackupHint" class="muted small">暂无教师备份</span>
+          <div class="button-row">
+            <button id="restoreTeacherBackupBtn" class="hidden">恢复载入前状态</button>
+          </div>
+        </div>
+        <div class="cloud-filter-row">
+          <label>选择班级<select id="cloudClassFilter"><option value="">请选择班级</option></select></label>
+          <label>选择学生<select id="cloudStudentFilter"><option value="">请先选择班级</option></select></label>
+        </div>
+        <div class="cloud-export-tools">
+          <span id="cloudSelectionHint" class="muted small">请选择班级和学生</span>
+          <button id="selectAllCloudStudentsBtn">全选本班</button>
+          <button id="clearCloudStudentSelectionBtn">取消选择</button>
+          <button id="exportCloudZipBtn" class="primary" disabled>导出云端 ZIP</button>
+        </div>
+        <div id="cloudStudentChecklist" class="cloud-student-checklist"><span class="muted small">请先选择班级</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>上传时间</th><th>云端方案</th><th>模型</th><th>学号</th><th>姓名</th><th>班级</th><th>仿真时间</th><th id="cloudValueHead">关键测量</th><th>来源</th><th>操作</th></tr></thead>
+            <tbody id="cloudSubmissionRows"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2 id="teacherDetailTitle">学生详情</h2></div>
+        <div class="curve-nav">
+          <div class="curve-tabs" id="teacherCurveTabs" role="tablist" aria-label="学生曲线切换">
+            <button class="active" data-teacher-curve-tab="level" role="tab">液位曲线</button>
+            <button data-teacher-curve-tab="flow" role="tab">流量曲线</button>
+            <button data-teacher-curve-tab="valve" role="tab">开度曲线</button>
+          </div>
+          <div class="curve-actions">
+            <button id="teacherCurveExportBtn" class="hidden">导出图片</button>
+            <button id="teacherCurveLatestBtn">最新视图</button>
+            <button id="teacherAnnToggleBtn" class="primary">隐藏标注</button>
+          </div>
+        </div>
+        <div class="curve-toolbar"><div id="teacherCurveLegend" class="legend"></div></div>
+        <canvas id="teacherChart" class="teacher-chart curve-canvas" width="1200" height="520" title="拖动坐标轴缩放，拖动绘图区平移，拖动虚线标注位置"></canvas>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>评分记录</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>模型</th><th>学号</th><th>姓名</th><th>班级</th><th>模式</th><th>总分</th><th>控制</th><th>安全</th><th>收益</th></tr></thead>
+            <tbody id="recordRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <main id="viewRoster" class="view">
+      <section class="panel">
+        <div class="panel-head"><h2>新建班级</h2><span class="muted small">学生登录使用班级码、学号、姓名</span></div>
+        <div class="form-row">
+          <label>班级名称<input id="newClassName" placeholder="例如：自动化 2026-1 班"></label>
+          <label>班级码<input id="newClassCode" placeholder="例如：AUTO26A"></label>
+          <button id="createClassBtn" class="primary">新建班级</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>班级列表</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>班级名称</th><th>班级码</th><th>学生数</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="classRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 id="rosterTitle">学生名单</h2>
+          <div class="button-row">
+            <button id="exportRosterBtn">导出名单 CSV</button>
+            <button id="deleteClassBtn" class="danger">删除当前班级</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>班级名称<input id="rosterClassName"></label>
+          <label>班级码<input id="rosterClassCode"></label>
+          <label class="inline-label"><input id="rosterClassEnabled" type="checkbox"> 启用该班级</label>
+          <button id="saveClassBtn">保存班级设置</button>
+        </div>
+
+        <div class="form-row">
+          <label>新学生学号<input id="rosterStudentId" placeholder="学号"></label>
+          <label>新学生姓名<input id="rosterStudentName" placeholder="姓名"></label>
+          <button id="addStudentBtn" class="primary">添加学生</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>学号</th><th>姓名</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="rosterStudentRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>批量导入名单</h2><span class="muted small">支持 Excel / CSV，也可手动粘贴</span></div>
+        <div class="import-picker">
+          <label class="file-pick">
+            <input id="rosterFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+            <span>选择 Excel / CSV 文件</span>
+          </label>
+          <button id="clearRosterFileBtn" class="ghost small-button hidden">清除文件</button>
+          <span class="muted small">读取第一张工作表，自动识别学号和姓名列</span>
+        </div>
+        <div id="rosterFileName" class="muted small import-file hidden"></div>
+        <div id="rosterPreviewWrap" class="table-wrap roster-preview hidden">
+          <div class="preview-head"><b>名单预览</b><span id="rosterPreviewSummary" class="muted small"></span></div>
+          <table class="compact-table">
+            <thead><tr><th>学号</th><th>姓名</th></tr></thead>
+            <tbody id="rosterPreviewRows"></tbody>
+          </table>
+        </div>
+        <textarea id="rosterImportText" rows="8" placeholder="也可以手动粘贴，每行一个：学号,姓名&#10;20260001,张三&#10;20260002,李四"></textarea>
+        <div class="button-row">
+          <button id="importMergeBtn" class="primary">合并导入</button>
+          <button id="importReplaceBtn" class="danger">覆盖导入</button>
+        </div>
+      </section>
+    </main>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/vendor/xlsx.full.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
