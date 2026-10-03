@@ -72,6 +72,15 @@
     }
   }
 
+  class ViewStore {
+    constructor() { this.cameras = new Map(); }
+    camera(model, expanded = false) {
+      const key = `${model}:${expanded ? 'expanded' : 'normal'}`;
+      if (!this.cameras.has(key)) this.cameras.set(key, new Camera());
+      return this.cameras.get(key);
+    }
+  }
+
   function bindPan(viewport, { getPan, onPan }) {
     const host = viewport.ownerDocument?.defaultView || viewport;
     let drag = null;
@@ -108,7 +117,7 @@
     host.addEventListener('blur', cancel);
     return { cancel };
   }
-  const api = { bindPan, Camera };
+  const api = { bindPan, Camera, ViewStore };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.SimulationView = api;
 })(typeof window === 'object' ? window : globalThis);

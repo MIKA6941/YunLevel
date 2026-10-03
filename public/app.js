@@ -30,7 +30,8 @@ const app = {
   teacherClassFilter: '',
   // 教师端看板模型筛选：'all' | 'tank' | 'hx'。导出、云端读取都跟随它。
   teacherModelFilter: 'all',
-  simCamera: new SimulationView.Camera(),
+  simViews: new SimulationView.ViewStore(),
+  simVisualId: null,
   showProcessWires: true,
   showSecondaryLabels: true,
   schemeMode: null,
@@ -3597,6 +3598,10 @@ function applySimScale() {
   const viewport = document.querySelector('.process-viewport');
   const visual = [$('processVisual'), $('hxProcessVisual')].find(el => el && !el.classList.contains('hidden'));
   if (!viewport || !visual) return;
+  if (app.simVisualId !== visual.id) {
+    app.simInteraction?.cancel();
+    app.simVisualId = visual.id;
+  }
   const camera = getSimCamera();
   if (!camera.update({ width: visual.offsetWidth, height: visual.offsetHeight,
     viewportWidth: viewport.clientWidth, viewportHeight: viewport.clientHeight })) return;
@@ -3611,7 +3616,8 @@ function applySimScale() {
 }
 
 function getSimCamera() {
-  return app.simCamera;
+  return app.simViews.camera(modelSpec().renderer,
+    document.querySelector('.sim-panel')?.classList.contains('expanded'));
 }
 
 function setSimScale(nextScale) {
@@ -3627,7 +3633,6 @@ function setSimExpanded(expanded) {
   panel.classList.toggle('expanded', expanded);
   backdrop.classList.toggle('hidden', !expanded);
   document.body.classList.toggle('sim-expanded', expanded);
-  getSimCamera().fit();
   app.simInteraction?.cancel();
   if (button) {
     button.classList.toggle('on', expanded);
@@ -3697,7 +3702,11 @@ function wireSimControls() {
   if (backdrop) backdrop.onclick = () => setSimExpanded(false);
   if (viewport) {
     app.simInteraction = SimulationView.bindPan(viewport, {
-      getPan: () => getSimCamera().frame(),
+      getPan: () => {
+        applySimScale();
+        const camera = getSimCamera();
+        return camera.geometry ? camera.frame() : { x: 0, y: 0 };
+      },
       onPan: (pan) => { getSimCamera().panTo(pan); applySimScale(); },
     });
     if (typeof ResizeObserver === 'function') {

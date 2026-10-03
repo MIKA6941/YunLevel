@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { bindPan, Camera } = require('../public/simulation-view');
+const { bindPan, Camera, ViewStore } = require('../public/simulation-view');
 
 function surface() {
   const events = new Map();
@@ -174,4 +174,49 @@ test('boundary and centering invariants hold across fit, zoom and extreme pan co
       }
     }
   }
+});
+
+test('fullscreen has its own fitted camera and cannot reset a normal view', () => {
+  const store = new ViewStore();
+  const normal = store.camera('tank');
+  normal.update(geometry);
+  normal.setScale(1.4);
+  normal.panTo({ x: -400, y: -70 });
+  const before = normal.frame();
+  const expanded = store.camera('tank', true);
+  expanded.update({ ...geometry, viewportWidth: 1472, viewportHeight: 390 });
+  assert.equal(expanded.autoFit, true);
+  expanded.setScale(1.7);
+  expanded.panTo({ x: -200, y: -200 });
+  assert.equal(store.camera('tank'), normal);
+  normal.update(geometry);
+  assert.deepEqual(normal.frame(), before);
+});
+test('both models retain independent normal and fullscreen positions', () => {
+  const store = new ViewStore();
+  const frames = new Map();
+  for (const model of ['tank', 'hx']) {
+    for (const expanded of [false, true]) {
+      const camera = store.camera(model, expanded);
+      camera.update(geometry);
+      camera.setScale(model === 'tank' ? 1.1 : 1.6);
+      camera.panTo({ x: expanded ? -180 : -140, y: -50 });
+      frames.set(`${model}:${expanded}`, camera.frame());
+    }
+  }
+  store.camera('hx', true).fit();
+  for (const [model, expanded] of [['tank', false], ['tank', true], ['hx', false]]) {
+    assert.deepEqual(store.camera(model, expanded).frame(), frames.get(`${model}:${expanded}`));
+  }
+});
+test('hiding and returning to the control tab keeps a manually adjusted view', () => {
+  const store = new ViewStore();
+  const camera = store.camera('hx');
+  camera.update(geometry);
+  camera.setScale(1.6);
+  camera.panTo({ x: -300, y: -150 });
+  const before = camera.frame();
+  assert.equal(camera.update({ ...geometry, viewportWidth: 0, viewportHeight: 0 }), false);
+  store.camera('hx', false).update(geometry);
+  assert.deepEqual(camera.frame(), before);
 });
