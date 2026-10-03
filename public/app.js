@@ -1,5 +1,9 @@
 const $ = (id) => document.getElementById(id);
 const api = async (url, options = {}) => {
+  if (app.me?.role === 'teacher' && app.me.viewOnly && options.method && options.method !== 'GET'
+      && !['/api/logout', '/api/session/heartbeat', '/api/session/end', '/api/teacher/active-model', '/api/teacher/cloud-export'].includes(url)) {
+    throw new Error('当前窗口只观察；控制窗口退出后按登录顺序接任。');
+  }
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     credentials: 'same-origin',
@@ -1191,6 +1195,7 @@ function updateState(state) {
   renderStudentCloudStatus();
   if (app.view === 'curves') scheduleStudentCharts();
   syncStudentRuleAccess();
+  syncTeacherObservation();
 }
 
 function syncSchemeControls(state) {
@@ -3084,6 +3089,11 @@ async function connectTeacher() {
 
   app.simEventSource = new EventSource('/api/stream');
   await refreshStudentCloudStatus();
+  app.simEventSource.addEventListener('identity', (e) => {
+    Object.assign(app.me, JSON.parse(e.data));
+    syncTeacherObservation();
+    toast('已接任教师控制权，演示继续运行');
+  });
   app.simEventSource.addEventListener('open', () => setConnection(true, '教师仿真已连接'));
   app.simEventSource.addEventListener('state', (e) => {
     const state = JSON.parse(e.data);
@@ -4368,4 +4378,19 @@ function syncStudentRuleAccess() {
   document.querySelectorAll('#scoreOffBtn, #scoreTankBtn, #scoreSystemBtn, [data-score-tank]').forEach(el => { el.disabled = true; el.title = '评分方案由教师设定'; });
   const start = $('scoreStartBtn');
   if (start) { start.disabled = !app.cloudSettings.scoreSystemOn || !!app.state?.score?.active; start.title = '按教师规则开始新一轮评分'; }
+}
+
+function syncTeacherObservation() {
+  if (app.me?.role !== 'teacher') return;
+  $('userLine').textContent = app.me.viewOnly ? '教师教学演示 · 只观察' : '教师教学演示 · 控制窗口';
+  const selectors = '#startBtn,#pauseBtn,#resetBtn,#presetBtn,#highScoreBtn,#currentSaveBtn,#currentRestoreBtn,#cloudUploadBtn,#cloudRestoreBtn,#applyManualBtn,#biasBtn,#clearLoopsBtn,#addLoopBtn,#curveClearBtn,#scoreOffBtn,#scoreTankBtn,#scoreSystemBtn,#scoreStartBtn,#teacherScoreConfig input,#teacherScoreConfig select,#teacherScoreConfig button,#toggleHxModelBtn,#toggleStudentUploadBtn,#clearRecordsBtn,#restoreTeacherBackupBtn,#createClassBtn,#deleteClassBtn,#saveClassBtn,#addStudentBtn,#importMergeBtn,#importReplaceBtn,[data-cloud-load],[data-student-save],[data-student-delete],[data-cmd],[data-scheme],[data-field],#buildType,#buildPv,#buildMv,#buildInner';
+  document.querySelectorAll(selectors).forEach(el => {
+    if (app.me.viewOnly) {
+      if (!el.hasAttribute('data-observer-disabled')) el.dataset.observerDisabled = String(el.disabled);
+      el.disabled = true;
+    } else if (el.hasAttribute('data-observer-disabled')) {
+      el.disabled = el.dataset.observerDisabled === 'true';
+      delete el.dataset.observerDisabled;
+    }
+  });
 }

@@ -502,8 +502,8 @@ async function main() {
     check('hx teacher login 200', hxTeacherLogin.status === 200, hxTeacherLogin.status + ' ' + hxTeacherLogin.text.slice(0, 160));
     state.hxTeacher = hxTeacherLogin.cookie;
     const hxLoad = await api('/api/teacher/load-project', {
-      method: 'POST', cookie: state.hxTeacher,
-      body: { classId: state.classId, studentId: STUDENT_ID, slot: 2 },
+      method: 'POST', cookie: state.teacher,
+      body: { classId: state.classId, studentId: STUDENT_ID, slot: 2, model: 'hx' },
     });
     check('teacher loads hx student project', hxLoad.status === 200 && hxLoad.json.ok === true, hxLoad.text.slice(0, 200));
     const hxTeacherState = await api('/api/state', { cookie: state.hxTeacher });
@@ -584,11 +584,11 @@ async function main() {
     const crossTeacherLogin = await api('/api/login', { method: 'POST', body: { role: 'teacher', teacherCode: TEACHER_CODE, model: 'tank' } });
     check('cross-model teacher login 200', crossTeacherLogin.status === 200 && !!crossTeacherLogin.cookie, crossTeacherLogin.text.slice(0, 160));
     const crossLoad = await api('/api/teacher/load-project', {
-      method: 'POST', cookie: crossTeacherLogin.cookie,
+      method: 'POST', cookie: state.teacher,
       body: { classId: state.classId, studentId: STUDENT_ID, slot: 2, model: 'hx' },
     });
     check('tank teacher can load an hx project explicitly', crossLoad.status === 200 && crossLoad.json.modelId === 'hx', crossLoad.text.slice(0, 200));
-    const crossState = await api('/api/state', { cookie: crossTeacherLogin.cookie });
+    const crossState = await api('/api/state', { cookie: state.teacher });
     check('teacher auth switches to the loaded hx engine', crossState.status === 200
       && crossState.json.modelId === 'hx' && typeof crossState.json.state.ti1104 !== 'undefined', crossState.text.slice(0, 200));
 

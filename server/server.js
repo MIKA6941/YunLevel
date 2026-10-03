@@ -646,14 +646,7 @@ async function login(req, res, body) {
       return sendJson(res, 403, { error: '教师口令不正确' });
     }
     const teacherKey = teacherSessionKey(requestedModel);
-    const old = enginesByKey.get(teacherKey);
-    if (old) old.stop();
-    if (old) await waitForClosed(old);
-    const engine = new EngineSession(teacherEngineOptions(requestedModel));
-    attachEngine(engine);
-    enginesByKey.set(teacherKey, engine);
-    await engine.start();
-    await applyScoreConfigToEngine(engine, scoreConfigFromSettings());
+    const engine = await ensureTeacherEngine(requestedModel);
 
     const token = makeToken();
     const auth = {
@@ -902,13 +895,41 @@ async function prepareStudentRestore(engine) {
 async function ensureTeacherEngine(modelId) {
   const key = teacherSessionKey(modelId);
   const existing = enginesByKey.get(key);
-  if (existing && existing.child && !existing.closed) return existing;
+  if (existing && existing.child && !existing.closed) {
+    await existing.ready;
+    return existing;
+  }
   const engine = new EngineSession(teacherEngineOptions(modelId));
   attachEngine(engine);
   enginesByKey.set(key, engine);
-  await engine.start();
-  await applyScoreConfigToEngine(engine, scoreConfigFromSettings(), { applyInitTemp: true });
+  engine.ready = (async () => {
+    await engine.start();
+    await applyScoreConfigToEngine(engine, scoreConfigFromSettings(), { applyInitTemp: true });
+  })();
+  await engine.ready;
   return engine;
+}
+
+function releaseTeacher(auth) {
+  sessionsByToken.delete(auth.token);
+  for (const map of [teacherStreams, teacherStudentStreams]) {
+    for (const res of map.keys()) if (res.sessionToken === auth.token) { res.end(); map.delete(res); }
+  }
+  for (const set of studentStreams.values()) {
+    for (const res of set) {
+      if (res.sessionToken === auth.token) { res.end(); set.delete(res); }
+    }
+  }
+  const remaining = Array.from(sessionsByToken.values()).filter(a => a.role === 'teacher');
+  if (!remaining.length) {
+    for (const engine of enginesByKey.values()) if (engine.ownerRole === 'teacher') stopEngine(engine);
+  } else if (!remaining.some(a => !a.viewOnly)) {
+    const next = remaining.sort((a, b) => a.createdAt - b.createdAt)[0];
+    next.viewOnly = false;
+    for (const set of studentStreams.values()) for (const res of set) {
+      if (res.sessionToken === next.token) res.write(`event: identity${LF}data: ${JSON.stringify({ viewOnly: false })}${LF}${LF}`);
+    }
+  }
 }
 
 async function loadTeacherProject(classId, studentId, slot, modelId = config.defaultModelId) {
@@ -1208,6 +1229,13 @@ async function mainHandler(req, res) {
       throw Object.assign(new Error('请求地址无效'), { statusCode: 400, code: 'INVALID_URL' });
     }
     const parts = pathname.split('/').filter(Boolean);
+    if (!['GET', 'HEAD'].includes(req.method)) {
+      const auth = authOf(req);
+      const readOnlyPosts = ['/api/login', '/api/logout', '/api/session/heartbeat', '/api/session/end', '/api/teacher/active-model', '/api/teacher/cloud-export'];
+      if (auth?.role === 'teacher' && auth.viewOnly && !readOnlyPosts.includes(pathname)) {
+        return sendJson(res, 403, { code: 'VIEW_ONLY', error: '当前窗口只观察，不能修改；控制窗口退出后按登录顺序接任。' });
+      }
+    }
     if (req.method === 'GET' && pathname === '/api/health') {
       return sendJson(res, 200, {
         ok: true,
@@ -1229,6 +1257,11 @@ async function mainHandler(req, res) {
     if (req.method === 'POST' && pathname === '/api/logout') {
       const auth = authOf(req);
       if (auth) {
+        if (auth.role === 'teacher') {
+          releaseTeacher(auth);
+          res.setHeader('Set-Cookie', 'yun_token=; Max-Age=0; Path=/');
+          return sendJson(res, 200, { ok: true });
+        }
         sessionsByToken.delete(auth.token);
         if (auth.role === 'student' || auth.role === 'teacher') {
           const engine = engineForAuth(auth);
@@ -1308,6 +1341,7 @@ async function mainHandler(req, res) {
       res.write(`event: hello${LF}data: ${JSON.stringify({ ok: true })}${LF}${LF}`);
       res.write(`event: settings${LF}data: ${JSON.stringify(snapshots.getSettings())}${LF}${LF}`);
       if (!studentStreams.has(auth.sessionKey)) studentStreams.set(auth.sessionKey, new Set());
+      res.sessionToken = auth.token;
       studentStreams.get(auth.sessionKey).add(res);
       const engine = engineForAuth(auth);
       if (engine?.lastState) {
@@ -1654,6 +1688,7 @@ async function mainHandler(req, res) {
       });
       res.write(`event: snapshot${LF}data: ${JSON.stringify(publicStudentState(engine))}${LF}${LF}`);
       teacherStudentStreams.set(res, { classId, studentId, modelId });
+      res.sessionToken = auth.token;
       req.on('close', () => teacherStudentStreams.delete(res));
       return;
     }
@@ -1701,6 +1736,7 @@ async function mainHandler(req, res) {
       });
       const streamModel = url.searchParams.get('model') || auth.modelId || config.defaultModelId;
       teacherStreams.set(res, streamModel);
+      res.sessionToken = auth.token;
       res.write(`event: overview${LF}data: ${JSON.stringify(overview('', streamModel))}${LF}${LF}`);
       req.on('close', () => teacherStreams.delete(res));
       return;
