@@ -60,6 +60,9 @@
 .loop-workspace input { min-width:0; font-size:14px; }
 .loop-workspace .loop-pv, .loop-workspace .loop-pv-row, .loop-workspace .mini { font-size:12px; }
 .sim-panel.expanded .critical-readouts, .sim-panel.expanded .measurement-details { display:none; }
+.process-visual .hx-valve-tag span, .process-visual .hx-valve-tag .driver-badge,
+.process-visual .hx-tag-card, .process-visual .driver-badge { font-size:12px; }
+.process-visual .hx-tag-card { box-shadow:none; }
 .loop-workspace-selection { overflow-wrap:anywhere; }
 .critical-readouts { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:16px; margin:20px 0 16px; }
 .critical-readouts > div { min-width:0; }
