@@ -1317,6 +1317,7 @@ function renderLoopWorkspace(loops, cascades) {
           renderPidProcess(app.state);
         }
         app.workspaceMotion.selection(previous, item.key, $('loopCards').querySelector('.loop-card:not(.hidden)'));
+        app.processDevices?.selectLoop(item.key);
       };
       list.appendChild(button);
     });
@@ -1356,9 +1357,33 @@ function wireControlWorkspace() {
     selector: '#loopCards input[data-field], #manualControls .field-grid input[type="number"]',
     getPolicy: parameterSliderPolicy,
   });
+  const deviceContext = () => ({ model:workspaceModel(), state:app.state, account:app.me, view:app.view,
+    selectedKey:app.loopSelection.current(workspaceModel())?.key, manualTargets:manualTargets(),
+    pvUnit:pv => pvCatalogItem(pv).unit || '',
+    entries:ControlWorkspace.entries(app.state?.loops || [], Number(app.state?.mode) === 1 ? app.state?.cascades || [] : []) });
+  const selectDeviceLoop = key => {
+    const previous = app.loopSelection.current(workspaceModel())?.key;
+    app.loopSelection.select(workspaceModel(), key);
+    if (app.state) { renderLoops(app.state); renderPidProcess(app.state); }
+    app.workspaceMotion.selection(previous, key, $('loopCards').querySelector('.loop-card:not(.hidden)'));
+  };
   app.processDevices = ProcessDevices.bind(document, {
-    getContext:() => ({ model:workspaceModel(), state:app.state, account:app.me, view:app.view,
-      entries:ControlWorkspace.entries(app.state?.loops || [], Number(app.state?.mode) === 1 ? app.state?.cascades || [] : []) }),
+    getContext:deviceContext,
+    controls:ProcessDeviceControls.create({ document, getContext:deviceContext, send:sendCommand,
+      feedback:app.parameterFeedback, policy:parameterSliderPolicy }),
+    select:selectDeviceLoop,
+    inspect:key => { selectDeviceLoop(key); app.parameterSlider.close(); $('loopWorkspace').scrollIntoView({ block:'nearest' });
+      $('loopCards').querySelector('.loop-card:not(.hidden) input')?.focus({ preventScroll:true }); },
+    build:device => {
+      document.querySelector('[data-control-tab="loops"]')?.click();
+      // Select the actual tab by its panel, keeping the existing builder command.
+      $('manualControls').classList.add('hidden'); $('loopLibrary').classList.remove('hidden');
+      document.querySelectorAll('[data-control-tab]').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.controlTab !== 'manual')));
+      $('loopBuilder').open = true; $('buildPv').value = String(device.pv);
+      if (device.mv !== undefined) $('buildMv').value = String(device.mv);
+      $('buildPv').focus();
+    },
+    motion:app.workspaceMotion,
     getPan:() => ({ ...app.simPan }),
     panTo:pan => { app.simPan = pan; applySimScale(); },
   });
@@ -1449,6 +1474,7 @@ function syncLoopCards(loops, cascades) {
     setLoopCardInput(card, 'innerKp', number(casc.innerKp, 3));
     setLoopCardInput(card, 'innerTi', tiText(casc.innerTi));
     setLoopCardInput(card, 'innerTd', number(casc.innerTd, 1));
+    setLoopCardInput(card, 'innerManualOut', number(casc.innerOut, 1));
     const outerAuto = card.querySelector(`[data-casc-auto="${index}"]`);
     const outerAction = card.querySelector(`[data-casc-action="${index}"]`);
     const innerAuto = card.querySelector(`[data-casc-inner-auto="${index}"]`);
@@ -1545,6 +1571,7 @@ function renderLoops(state) {
         <label>副环 Kp<input data-casc="${index}" data-field="innerKp" type="number" step="0.01" value="${number(casc.innerKp, 3)}"></label>
         <label>副环 Ti<input data-casc="${index}" data-field="innerTi" type="text" inputmode="decimal" placeholder="有限正数或 inf" value="${tiText(casc.innerTi)}"></label>
         <label>副环 Td<input data-casc="${index}" data-field="innerTd" type="number" value="${number(casc.innerTd, 1)}"></label>
+        <label>阀门手动输出 %<input data-casc="${index}" data-field="innerManualOut" type="number" min="0" max="100" value="${number(casc.innerOut, 1)}"></label>
         </div>
       </fieldset>
       <div class="button-row">
@@ -1648,6 +1675,7 @@ function readCascadeForm(index) {
     innerKp: inputValue(cascInput(index, 'innerKp'), '副环 Kp'),
     innerTi: tiInputValue(cascInput(index, 'innerTi'), '副环 Ti'),
     innerTd: inputValue(cascInput(index, 'innerTd'), '副环 Td'),
+    innerManualOut: inputValue(cascInput(index, 'innerManualOut'), '阀门手动输出'),
   };
 }
 
@@ -1672,11 +1700,7 @@ async function applyLoop(index) {
 async function applyLoopFlag(index, change) {
   const loop = app.state?.loops?.[index];
   if (!loop) return;
-  const form = readLoopForm(index);
-  const manual = change.manual === undefined ? (loop.manual ? 1 : 0) : change.manual;
-  const action = change.action === undefined ? loop.action : change.action;
-  await sendCommand(`SET_PID loop ${index} ${form.kp} ${form.ti} ${form.td} ${action} ${manual} ${form.manualOut}`);
-  clearLoopDirty(index);
+  await sendCommand(ProcessDeviceControls.pidCommand({ kind:'loop', index, value:loop }, 'loop', change));
 }
 
 async function applyCascade(index) {
@@ -1685,7 +1709,7 @@ async function applyCascade(index) {
   const form = readCascadeForm(index);
   if (Number(c.outerSp) !== form.outerSp) await sendCommand(`SET_PVX_SP ${c.outer} ${form.outerSp}`);
   await sendCommand(`SET_PID outer ${index} ${form.outerKp} ${form.outerTi} ${form.outerTd} ${c.outerAction} ${c.outerManual ? 1 : 0} ${c.outerOut}`);
-  await sendCommand(`SET_PID inner ${index} ${form.innerKp} ${form.innerTi} ${form.innerTd} ${c.innerAction} ${c.innerManual ? 1 : 0} ${c.innerOut}`);
+  await sendCommand(`SET_PID inner ${index} ${form.innerKp} ${form.innerTi} ${form.innerTd} ${c.innerAction} ${c.innerManual ? 1 : 0} ${form.innerManualOut}`);
   clearCascadeDirty(index);
   toast('串级参数已应用');
 }
@@ -1693,18 +1717,7 @@ async function applyCascade(index) {
 async function applyCascadeFlag(index, which, change) {
   const c = app.state?.cascades?.[index];
   if (!c) return;
-  const form = readCascadeForm(index);
-  const inner = which === 'inner';
-  const manual = change.manual === undefined
-    ? ((inner ? c.innerManual : c.outerManual) ? 1 : 0)
-    : change.manual;
-  const action = change.action === undefined ? (inner ? c.innerAction : c.outerAction) : change.action;
-  const kp = inner ? form.innerKp : form.outerKp;
-  const ti = inner ? form.innerTi : form.outerTi;
-  const td = inner ? form.innerTd : form.outerTd;
-  const out = inner ? c.innerOut : c.outerOut;
-  await sendCommand(`SET_PID ${inner ? 'inner' : 'outer'} ${index} ${kp} ${ti} ${td} ${action} ${manual} ${out}`);
-  clearCascadeDirty(index);
+  await sendCommand(ProcessDeviceControls.pidCommand({ kind:'casc', index, value:c }, which, change));
 }
 
 function pvName(pv) {

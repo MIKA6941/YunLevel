@@ -13,7 +13,27 @@
 .device-reading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:20px 0 8px; }
 .device-reading span { color:var(--muted); font-size:12px; }
 .device-reading strong { font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; }
+.device-content { margin-top:16px; }
+.device-field-group { min-width:0; margin:16px 0; padding:0; border:0; }
+.device-field-group + .device-field-group { padding-top:16px; border-top:1px solid var(--line); }
+.device-field-group legend { color:var(--text); font-size:14px; font-weight:600; margin-bottom:8px; }
+.device-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.device-fields label, .device-loop-choice { min-width:0; color:var(--muted); font-size:12px; line-height:1.5; }
+.device-fields input { min-width:0; width:100%; font-size:14px; }
+.device-fields input[readonly] { border-style:dashed; color:var(--muted); }
+.device-fields input[type="range"] { padding:0; margin-top:6px; min-height:24px; accent-color:var(--accent); cursor:pointer; }
+.device-fields input[type="range"]:disabled { cursor:default; opacity:.5; }
+.device-fields .device-infinity { display:flex; align-items:center; gap:6px; margin-top:4px; }
+.device-fields .device-infinity input { width:16px; min-height:16px; margin:0; }
+.device-hint { color:var(--muted); font-size:12px; line-height:1.5; }
+.device-hint:empty { display:none; }
+.device-feedback { margin:12px 0; line-height:1.5; }
+.device-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.device-actions button { min-height:40px; white-space:normal; }
+.device-actions .primary { grid-column:1 / -1; }
 @media(width < 900px) {
   .process-device-panel { width:100%; max-width:none; border-radius:12px 12px 0 0; padding:16px 20px calc(16px + env(safe-area-inset-bottom)); }
   .device-close { width:44px; height:44px; flex-basis:44px; }
+  .device-fields input:not([type="checkbox"]) { font-size:16px; min-height:44px; }
+  .device-actions button { min-height:44px; }
 }

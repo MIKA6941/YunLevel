@@ -84,7 +84,7 @@
     refreshAll();
     return {
       refresh:refreshAll,
-      async submit(button, action) {
+      async submit(button, action, scope = {}) {
         const root = button.closest(selector);
         if (destroyed || !root || button.disabled || state(root).pending) return;
         const current = state(root);
@@ -97,10 +97,12 @@
         button.textContent = '应用中…';
         refresh(root);
         try {
-          await applyDraft(Array.from(root.querySelectorAll('input')).filter(input => !input.disabled && !input.readOnly), action);
+          await applyDraft((scope.inputs || Array.from(root.querySelectorAll('input'))).filter(input => !input.disabled && !input.readOnly), action);
           current.applied = true;
+          return { ok:true };
         } catch (error) {
           current.error = error.message || '请求失败';
+          return { ok:false, error:current.error };
         } finally {
           current.pending = false;
           delete button.dataset.submitting;

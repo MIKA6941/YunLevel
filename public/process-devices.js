@@ -59,11 +59,12 @@
       '<div class="device-reading"><span>当前测量值</span><strong></strong></div><p class="device-ownership"></p><div class="device-content"></div>';
     doc.body.append(panel);
     const nodes = [];
-    let active = null, gesture = null;
+    let active = null, gesture = null, bindings = [], contentSignature = '';
     function context() { return options.getContext(); }
     function close({ restoreFocus = false } = {}) {
       const previous = active;
       active = null; panel.hidden = true;
+      options.motion?.cancel(panel.querySelector('.device-feedback'));
       nodes.forEach(node => node.setAttribute('aria-pressed', 'false'));
       if (restoreFocus && previous?.anchor.isConnected) previous.anchor.focus({ preventScroll:true });
     }
@@ -92,13 +93,145 @@
       panel.querySelector('.device-ownership').textContent = ctx.account.viewOnly
         ? '观察窗口 · 仅可查看'
         : owners.length ? `关联 ${owners.length} 个回路，调节通过回路生效。` : active.device.manual ? '独立手操 · 应用后生效' : '尚未连接回路';
+      renderContent(owners);
       position();
+    }
+    function renderContent(owners) {
+      if (!options.controls) return;
+      if (active.loopKey && !owners.some(item => item.key === active.loopKey)) active.loopKey = null;
+      if (!active.loopKey && owners.length === 1) {
+        active.loopKey = owners[0].key; options.select?.(active.loopKey);
+      }
+      const data = options.controls.describe(active.device, active.loopKey);
+      const signature = `${active.model}:${active.device.id}:${active.loopKey}:${owners.map(item => item.key).join('|')}:${data.fields.map(item => item.key).join('|')}:${data.actions.map(item => item.id).join('|')}`;
+      const content = panel.querySelector('.device-content');
+      if (contentSignature !== signature) {
+        contentSignature = signature; content.replaceChildren(); bindings = [];
+        if (owners.length > 1) {
+          const label = doc.createElement('label'); label.className = 'device-loop-choice'; label.textContent = '选择关联回路';
+          const select = doc.createElement('select');
+          select.append(new view.Option('请选择回路', ''));
+          owners.forEach(item => select.append(new view.Option(`${item.kind === 'loop' ? '单回路' : '串级'} ${item.index + 1}`, item.key)));
+          select.value = active.loopKey || '';
+          select.onchange = () => { active.loopKey = select.value || null; if (active.loopKey) options.select?.(active.loopKey); refresh(); };
+          label.append(select); content.append(label);
+        }
+        if (owners.length > 1 && !active.loopKey) {
+          const hint = doc.createElement('p'); hint.className = 'device-hint'; hint.textContent = '此设备关联多个回路，选择后调节。'; content.append(hint);
+          return;
+        }
+        let groupName = null, grid;
+        data.fields.forEach(field => {
+          if (groupName !== field.group || !grid) {
+            groupName = field.group;
+            const group = doc.createElement('fieldset'); group.className = 'device-field-group';
+            if (groupName) { const legend = doc.createElement('legend'); legend.textContent = groupName; group.append(legend); }
+            grid = doc.createElement('div'); grid.className = 'device-fields'; group.append(grid); content.append(group);
+          }
+          const label = doc.createElement('label'); label.textContent = field.label;
+          const control = doc.createElement('input'); control.type = field.source.type;
+          control.dataset.deviceField = field.key; control.setAttribute('inputmode', 'decimal');
+          if (field.source.step) control.step = field.source.step;
+          label.append(control); grid.append(label);
+          const range = doc.createElement('input'); range.type = 'range'; range.setAttribute('aria-label', field.label + '滑块');
+          label.append(range);
+          let infinity;
+          if (field.policy?.allowInfinity) {
+            const check = doc.createElement('label'); check.className = 'device-infinity';
+            infinity = doc.createElement('input'); infinity.type = 'checkbox'; check.append(infinity, '关闭积分（inf）'); label.append(check);
+          }
+          const binding = { key:field.key,control,range,infinity,source:field.source,memory:null };
+          control.oninput = () => write(binding, control.value);
+          control.onblur = () => syncFields();
+          range.oninput = () => write(binding, range.value);
+          if (infinity) infinity.onchange = () => write(binding, infinity.checked ? 'inf' : binding.memory ?? field.policy.min);
+          bindings.push(binding);
+        });
+        const hint = doc.createElement('p'); hint.className = 'device-hint'; hint.textContent = data.readonly;
+        content.append(hint);
+        const feedback = doc.createElement('p'); feedback.className = 'device-feedback parameter-feedback';
+        feedback.setAttribute('role','status'); feedback.setAttribute('aria-live','polite'); content.append(feedback);
+        const actions = doc.createElement('div'); actions.className = 'device-actions';
+        data.actions.forEach(action => {
+          const button = doc.createElement('button'); button.type = 'button'; button.dataset.deviceAction = action.id;
+          button.className = action.primary ? 'primary' : ''; button.textContent = action.label;
+          button.onclick = async () => {
+            if (!active || button.disabled) return;
+            const saved = active, device = saved.device, loopKey = saved.loopKey;
+            saved.error = '';
+            button.disabled = true;
+            try {
+              const result = await options.controls.act(device, loopKey, action.id);
+              if (active === saved && result?.ok) { refresh();
+                const output = panel.querySelector('.device-feedback');
+                if (output?.dataset.phase === 'applied') options.motion?.confirm(output); }
+            } catch (error) {
+              if (active === saved) { saved.error = `${error.message}。草稿已保留。`; }
+            } finally { if (active === saved) { button.disabled = false; syncFields(); position(); } }
+          };
+          actions.append(button);
+        });
+        if (data.entry) {
+          const inspect = doc.createElement('button'); inspect.type = 'button'; inspect.textContent = '查看侧栏参数';
+          inspect.onclick = () => { const key = active.loopKey; close(); options.inspect?.(key); }; actions.append(inspect);
+        } else if (data.canBuild) {
+          const build = doc.createElement('button'); build.type = 'button'; build.textContent = '去搭建回路';
+          build.onclick = () => { const device = active.device; close(); options.build?.(device); }; actions.append(build);
+        }
+        content.append(actions);
+      }
+      syncFields();
+    }
+    function syncFields() {
+      if (!active || !options.controls) return;
+      const data = options.controls.describe(active.device, active.loopKey);
+      bindings.forEach(binding => {
+        const field = data.fields.find(item => item.key === binding.key);
+        if (!field) return;
+        const source = field.source; binding.source = source;
+        const readonly = field.disabled || source.disabled || source.readOnly;
+        binding.control.readOnly = readonly;
+        binding.control.title = readonly ? '当前只读；自动模式输出请先投手动' : '';
+        if (binding.control !== doc.activeElement && binding.control.value !== source.value) binding.control.value = source.value;
+        if (!field.policy) { binding.range.hidden = true; return; }
+        const range = view.ParameterSlider.rangeFor(field.policy, source.value, binding.memory);
+        binding.memory = range.rememberedFinite;
+        binding.range.min = range.min; binding.range.max = range.max; binding.range.step = range.step;
+        binding.range.value = range.value; binding.range.disabled = readonly || range.infinity || range.invalid;
+        binding.range.setAttribute('aria-valuetext', range.infinity ? '关闭积分' : source.value);
+        if (binding.infinity) { binding.infinity.checked = range.infinity; binding.infinity.disabled = readonly; }
+      });
+      const pending = data.root?.getAttribute('aria-busy') === 'true';
+      panel.setAttribute('aria-busy', String(pending));
+      data.actions.forEach(action => {
+        const button = panel.querySelector(`[data-device-action="${action.id}"]`);
+        if (button) { button.disabled = action.disabled || pending;
+          button.textContent = pending && action.primary ? '应用中…' : action.label;
+          if (pending && action.primary) button.dataset.submitting = '1'; else delete button.dataset.submitting; }
+      });
+      const sourceFeedback = data.root?.querySelector('.parameter-feedback');
+      const feedback = panel.querySelector('.device-feedback');
+      if (feedback && active.error) { feedback.textContent = active.error; feedback.dataset.phase = 'error'; }
+      else if (feedback && sourceFeedback) { feedback.textContent = sourceFeedback.textContent; feedback.dataset.phase = sourceFeedback.dataset.phase; }
+    }
+    function write(binding, value) {
+      if (!active) return;
+      const field = options.controls.describe(active.device, active.loopKey).fields.find(item => item.key === binding.key);
+      if (!field || field.disabled || field.source.disabled || field.source.readOnly) return;
+      active.error = '';
+      field.source.value = String(value);
+      field.source.dispatchEvent(new view.Event('input', { bubbles:true }));
+      binding.control.value = field.source.value; syncFields();
     }
     function open(node) {
       const ctx = context();
       const device = devices(ctx.model).find(item => item.id === node?.dataset.processDevice);
       if (!device || !ctx.account || ctx.view !== 'control') return;
-      active = { device, anchor:node, model:ctx.model };
+      const owners = related(device, ctx.entries || []);
+      const retained = owners.find(item => item.key === ctx.selectedKey);
+      active = { device, anchor:node, model:ctx.model, loopKey:retained?.key || (owners.length === 1 ? owners[0].key : null) };
+      if (active.loopKey) options.select?.(active.loopKey);
+      contentSignature = '';
       panel.querySelector('h2').textContent = device.id;
       panel.querySelector('.device-description').textContent = device.name;
       panel.hidden = false;
@@ -166,7 +299,17 @@
     view.visualViewport?.addEventListener('resize', position); view.visualViewport?.addEventListener('scroll', position);
     const observer = new view.MutationObserver(() => { if (active) refresh(); });
     if (viewport) observer.observe(viewport, { subtree:true, attributes:true, attributeFilter:['style','class'] });
-    return { refresh, close, position };
+    doc.addEventListener('input', event => { if (!panel.contains(event.target)) syncFields(); });
+    const formObserver = new view.MutationObserver(() => { if (active) { syncFields(); position(); } });
+    for (const id of ['loopCards','manualControls']) {
+      const root = doc.getElementById(id);
+      if (root) formObserver.observe(root, { subtree:true,attributes:true,childList:true,
+        attributeFilter:['aria-busy','data-dirty','disabled','readonly','data-phase'] });
+    }
+    return { refresh, close, position, selectLoop(key) {
+      if (active && related(active.device, context().entries || []).some(item => item.key === key)) { active.loopKey = key; refresh(); }
+      else close();
+    } };
   }
   return { devices, related, reading, place, bind };
 });

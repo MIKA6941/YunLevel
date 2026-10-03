@@ -30,6 +30,7 @@ for (const file of [
   'public/parameter-feedback.js',
   'public/workspace-motion.js',
   'public/process-devices.js',
+  'public/process-device-controls.js',
 ]) {
   run(['--check', file]);
 }
@@ -42,4 +43,5 @@ run([
   'scripts/parameter-feedback.test.js',
   'scripts/workspace-motion.test.js',
   'scripts/process-devices.test.js',
+  'scripts/process-device-controls.test.js',
 ]);
