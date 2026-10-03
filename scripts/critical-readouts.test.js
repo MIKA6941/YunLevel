@@ -2,6 +2,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { criticalReadouts } = require('../public/control-workspace');
+const { fitFrame } = require('../public/control-workspace');
+const fs = require('node:fs');
+const path = require('node:path');
 
 test('tank readouts retain model precision and percentage units', () => {
   const tags = ['h1','h2','h3'].map((key, index) => ({ key, label:`LI10${index + 1}(%)`, digits:2 }));
@@ -32,4 +35,19 @@ test('missing, empty and invalid measurements are never presented as zero', () =
 test('a model switch rebuilds the presentation from that model only', () => {
   assert.deepEqual(criticalReadouts('hx', [], { h1:65 }).map(row => row.key), ['ti1104','sp','ti1103','fi1105']);
   assert.ok(criticalReadouts('hx', [], { h1:65 }).every(row => row.value === '—'));
+});
+test('the complete process world fits narrow, sidebar and fullscreen viewports', () => {
+  for (const viewport of [{ width:326, height:340 }, { width:762, height:340 }, { width:1480, height:620 }]) {
+    const world = { width:1100, height:470 };
+    const frame = fitFrame(viewport, world, 1);
+    assert.ok(frame.x >= 0 && frame.y >= 0);
+    assert.ok(frame.x + world.width * frame.scale <= viewport.width + 1e-8);
+    assert.ok(frame.y + world.height * frame.scale <= viewport.height + 1e-8);
+  }
+});
+test('each tank measurement id belongs to exactly one visible metrics element', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+  for (const id of ['mL1','mL2','mL3','mQin','mQ12','mQ23','mQout','mPi']) {
+    assert.equal(html.split(`id="${id}"`).length - 1, 1, id);
+  }
 });

@@ -461,7 +461,10 @@ function renderModelMetrics(state = app.state) {
   if (!state) return;
   for (const tag of modelSpec().parameterTags || []) {
     const el = $(metricElementId(tag.key));
-    if (el) el.textContent = number(state[tag.key], tag.digits ?? 2);
+    if (el) {
+      const reading = ControlWorkspace.measurementValue(tag, state[tag.key]);
+      el.textContent = reading.value + (reading.unit ? ' ' + reading.unit : '');
+    }
   }
 }
 
@@ -3712,11 +3715,16 @@ function applySimScale() {
   if (!visuals.length) return;
   app.simScale = clamp(Number(app.simScale) || 1, 0.8, 1.8);
   const pan = app.simPan || { x: 0, y: 0 };
-  const labelScale = clamp(1 / app.simScale, 0.86, 1.2);
   for (const visual of visuals) {
-    visual.style.transformOrigin = 'center center';
+    if (visual.classList.contains('hidden')) continue;
+    const viewport = visual.parentElement;
+    if (!viewport.clientWidth || !viewport.clientHeight) continue;
+    const frame = ControlWorkspace.fitFrame({ width:viewport.clientWidth, height:viewport.clientHeight },
+      { width:visual.offsetWidth, height:visual.offsetHeight }, app.simScale);
+    const labelScale = clamp(1 / frame.scale, 0.86, 1.2);
+    visual.style.transformOrigin = '0 0';
     visual.style.setProperty('--sim-label-scale', labelScale.toFixed(3));
-    visual.style.transform = `translate(${Number(pan.x) || 0}px, ${Number(pan.y) || 0}px) scale(${app.simScale})`;
+    visual.style.transform = `translate(${frame.x + (Number(pan.x) || 0)}px, ${frame.y + (Number(pan.y) || 0)}px) scale(${frame.scale})`;
   }
   const readout = $('simZoomValue');
   if (readout) readout.textContent = `${Math.round(app.simScale * 100)}%`;
