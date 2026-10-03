@@ -27,6 +27,7 @@ for (const file of [
   'public/app.js',
   'public/control-workspace.js',
   'public/parameter-slider.js',
+  'public/parameter-feedback.js',
 ]) {
   run(['--check', file]);
 }
@@ -36,4 +37,5 @@ run([
   'scripts/control-workspace.test.js',
   'scripts/parameter-slider.test.js',
   'scripts/critical-readouts.test.js',
+  'scripts/parameter-feedback.test.js',
 ]);

@@ -790,6 +790,10 @@ function switchView(view) {
     }
   }
   app.view = view;
+  const activeView = $(`view${view[0].toUpperCase()}${view.slice(1)}`);
+  if (activeView) activeView.tabIndex = -1;
+  const skipLink = document.querySelector('.skip-link');
+  if (skipLink && activeView) skipLink.href = '#' + activeView.id;
   document.querySelectorAll('#mainTabs .tab').forEach((tab) => {
     tab.classList.toggle('active', tab.dataset.view === view);
   });
@@ -1331,6 +1335,7 @@ function renderLoopWorkspace(loops, cascades) {
 }
 
 function wireControlWorkspace() {
+  app.parameterFeedback = ParameterFeedback.bind(document);
   app.parameterSlider = ParameterSlider.bind(document, {
     selector: '#loopCards input[data-field], #manualControls .field-grid input[type="number"]',
     getPolicy: parameterSliderPolicy,
@@ -1526,7 +1531,7 @@ function renderLoops(state) {
     wrap.appendChild(div);
   });
   wrap.querySelectorAll('[data-loop-apply]').forEach((btn) => {
-    btn.onclick = () => applyLoop(Number(btn.dataset.loopApply)).catch((e) => toast(e.message, true));
+    btn.onclick = () => app.parameterFeedback.submit(btn, () => applyLoop(Number(btn.dataset.loopApply)));
   });
   wrap.querySelectorAll('[data-loop-auto]').forEach((btn) => {
     btn.onclick = () => applyLoopFlag(Number(btn.dataset.loopAuto), { manual: Number(btn.dataset.manual) }).catch((e) => toast(e.message, true));
@@ -1538,7 +1543,7 @@ function renderLoops(state) {
     btn.onclick = () => sendCommand(`LOOP_DEL ${Number(btn.dataset.loopDel)}`);
   });
   wrap.querySelectorAll('[data-casc-apply]').forEach((btn) => {
-    btn.onclick = () => applyCascade(Number(btn.dataset.cascApply)).catch((e) => toast(e.message, true));
+    btn.onclick = () => app.parameterFeedback.submit(btn, () => applyCascade(Number(btn.dataset.cascApply)));
   });
   wrap.querySelectorAll('[data-casc-auto]').forEach((btn) => {
     btn.onclick = () => applyCascadeFlag(Number(btn.dataset.cascAuto), 'outer', { manual: Number(btn.dataset.manual) }).catch((e) => toast(e.message, true));
@@ -3872,8 +3877,7 @@ function wireStudentControls() {
       await sendCommand('HIGH_SCORE');
     } catch (e) { toast(e.message); }
   };
-  $('applyManualBtn').onclick = async () => {
-    try {
+  $('applyManualBtn').onclick = () => app.parameterFeedback.submit($('applyManualBtn'), async () => {
       const targets = [];
       for (const target of manualTargets()) {
         const input = $(target.id);
@@ -3899,8 +3903,7 @@ function wireStudentControls() {
         delete targets[i].input.dataset.dirty;
       }
       toast('手操参数已应用');
-    } catch (e) { toast(e.message); }
-  };
+  });
   $('biasBtn').onclick = () => sendCommand(`SET_BIAS ${app.state?.bias ? 0 : 1}`).catch((e) => toast(e.message));
   // —— 评分系统开关：关闭时才能改评分细则 ——
   const scoreSystemToggle = $('scoreSystemToggle');

@@ -31,11 +31,12 @@
         <label>教师口令<input id="teacherCode" name="teacherCode" type="password" autocomplete="current-password" required></label>
         <button class="primary" type="submit">进入教师端</button>
       </form>
-      <div id="loginError" class="error"></div>
+      <div id="loginError" class="error" role="alert" aria-live="polite"></div>
     </div>
   </section>
 
   <section id="appView" class="app hidden">
+    <a class="skip-link" href="#viewControl">跳到实验内容</a>
     <header class="topbar">
       <div class="topbar-brand">
         <div class="brand-mark small">YL</div>
@@ -61,7 +62,7 @@
 
     <div id="simBackdrop" class="sim-backdrop hidden"></div>
 
-    <main id="viewControl" class="view active">
+    <main id="viewControl" class="view active" tabindex="-1">
       <section class="panel control-toolbar">
           <div class="panel-head">
             <h2>运行控制</h2>
@@ -795,10 +796,11 @@
     </main>
   </section>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="/vendor/xlsx.full.min.js"></script>
   <script src="/control-workspace.js"></script>
   <script src="/parameter-slider.js"></script>
+  <script src="/parameter-feedback.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
