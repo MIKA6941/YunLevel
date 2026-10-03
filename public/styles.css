@@ -1258,7 +1258,12 @@ body.sim-expanded { overflow: hidden; }
 .process-viewport {
   overflow: hidden;
   margin-bottom: 4px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
+.process-viewport.panning { cursor: grabbing; }
+.process-viewport.panning .process-visual { transition: none; }
 .hx-schematic {
   overflow: hidden;
   margin-bottom: 8px;

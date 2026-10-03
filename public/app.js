@@ -35,7 +35,7 @@ const app = {
   showProcessWires: true,
   showSecondaryLabels: true,
   schemeMode: null,
-  simDrag: null,
+  simInteraction: null,
   pidPanelVisible: true,
   historyClock: { offset: 0, lastRawT: null, lastDisplayT: null },
   cloudSettings: { allowStudentUpload: false, updatedAt: null },
@@ -3623,7 +3623,7 @@ function setSimExpanded(expanded) {
   backdrop.classList.toggle('hidden', !expanded);
   document.body.classList.toggle('sim-expanded', expanded);
   app.simPan = { x: 0, y: 0 };
-  app.simDrag = null;
+  app.simInteraction?.cancel();
   if (button) {
     button.classList.toggle('on', expanded);
     button.title = expanded ? '退出全屏仿真图' : '放大到全屏区域';
@@ -3689,36 +3689,10 @@ function wireSimControls() {
   };
   if (backdrop) backdrop.onclick = () => setSimExpanded(false);
   if (viewport) {
-    viewport.addEventListener('pointerdown', (event) => {
-      if (!document.querySelector('.sim-panel')?.classList.contains('expanded')) return;
-      app.simDrag = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        originX: Number(app.simPan?.x) || 0,
-        originY: Number(app.simPan?.y) || 0,
-      };
-      viewport.classList.add('panning');
-      try { viewport.setPointerCapture(event.pointerId); } catch {}
-      event.preventDefault();
+    app.simInteraction = SimulationView.bindPan(viewport, {
+      getPan: () => app.simPan,
+      onPan: (pan) => { app.simPan = pan; applySimScale(); },
     });
-    viewport.addEventListener('pointermove', (event) => {
-      const drag = app.simDrag;
-      if (!drag || drag.pointerId !== event.pointerId) return;
-      app.simPan = {
-        x: drag.originX + event.clientX - drag.startX,
-        y: drag.originY + event.clientY - drag.startY,
-      };
-      applySimScale();
-    });
-    const finish = (event) => {
-      if (!app.simDrag || app.simDrag.pointerId !== event.pointerId) return;
-      app.simDrag = null;
-      viewport.classList.remove('panning');
-      try { viewport.releasePointerCapture(event.pointerId); } catch {}
-    };
-    viewport.addEventListener('pointerup', finish);
-    viewport.addEventListener('pointercancel', finish);
   }
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && document.querySelector('.sim-panel')?.classList.contains('expanded')) setSimExpanded(false);
