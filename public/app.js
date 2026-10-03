@@ -201,12 +201,12 @@ const MODEL_SPECS = {
       { id: 'fv104Input', key: 'fv104', label: 'FV104 手操 %', cmd: 'VALVE', mv: 3, valueOf: 'fv104cmd' },
     ],
     pvCatalog: [
-      { value: 0, label: 'LI101 1#罐液位', unit: '%' },
-      { value: 1, label: 'LI102 2#罐液位', unit: '%' },
-      { value: 2, label: 'LI103 3#罐液位', unit: '%' },
-      { value: 3, label: 'FI101 给水流量', unit: 'L/min', flowOnly: true },
-      { value: 4, label: 'FI102 级间流量1', unit: 'L/min', flowOnly: true },
-      { value: 5, label: 'FI103 级间流量2', unit: 'L/min', flowOnly: true },
+      { value: 0, label: 'LI101 1#罐液位', unit: '%', stateKey:'h1' },
+      { value: 1, label: 'LI102 2#罐液位', unit: '%', stateKey:'h2' },
+      { value: 2, label: 'LI103 3#罐液位', unit: '%', stateKey:'h3' },
+      { value: 3, label: 'FI101 给水流量', unit: 'L/min', flowOnly: true, stateKey:'qin' },
+      { value: 4, label: 'FI102 级间流量1', unit: 'L/min', flowOnly: true, stateKey:'q12' },
+      { value: 5, label: 'FI103 级间流量2', unit: 'L/min', flowOnly: true, stateKey:'q23' },
     ],
     mvCatalog: [
       { value: 0, label: 'FV101 给水总阀' },
@@ -302,8 +302,8 @@ const MODEL_SPECS = {
       { id: 'inletTempInput', key: 'ti1103', label: 'TI1103 入口蒸汽 ℃', cmd: 'INLET', valueOf: 'ti1103', min: 250, max: 650, step: 1 },
     ],
     pvCatalog: [
-      { value: 0, label: 'TI1104 出口温度', unit: '℃' },
-      { value: 1, label: 'FI1105 蒸汽流量', unit: 'kg/s', flowOnly: true },
+      { value: 0, label: 'TI1104 出口温度', unit: '℃', stateKey:'ti1104' },
+      { value: 1, label: 'FI1105 蒸汽流量', unit: 'kg/s', flowOnly: true, stateKey:'fi1105' },
     ],
     mvCatalog: [
       { value: 0, label: 'FV1102 冷却水阀' },
@@ -1393,16 +1393,15 @@ function pvValueText(pv, value, digits = 1) {
 }
 
 function loopPvText(loop) {
-  const value = Number(loop?.pvValue);
-  return Number.isFinite(value) ? pvValueText(loop.pv, value, 1) : '--';
+  const catalog = pvCatalogItem(loop?.pv);
+  return ControlWorkspace.pvReadout(catalog, app.state, catalog.flowOnly ? 2 : 1);
 }
 
 function cascadePvText(casc, side) {
   const outer = side === 'outer';
-  const value = Number(outer ? casc?.outerPvValue : casc?.innerPvValue);
-  if (!Number.isFinite(value)) return '--';
   const pv = Number(outer ? casc.outer : casc.inner);
-  return pvValueText(pv, value, pvCatalogItem(pv).flowOnly ? 2 : 1);
+  const catalog = pvCatalogItem(pv);
+  return ControlWorkspace.pvReadout(catalog, app.state, catalog.flowOnly ? 2 : 1);
 }
 
 function syncLoopCards(loops, cascades) {

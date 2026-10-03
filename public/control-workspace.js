@@ -79,6 +79,10 @@
     const height = numeric ? Math.max(0, Math.min(100, Number(raw))) * 1.2 : 0;
     return { y:240 - height, height };
   }
+  function pvReadout(catalog, state, digits) {
+    const reading = measurementValue({ label:`${catalog.label || 'PV'} (${catalog.unit || ''})`, digits }, state?.[catalog.stateKey]);
+    return reading.value === '—' ? '—' : `${reading.value} ${reading.unit}`.trim();
+  }
   function criticalReadouts(model, tags, state) {
     const keys = model === 'hx' ? ['ti1104', 'sp', 'ti1103', 'fi1105'] : ['h1', 'h2', 'h3'];
     return keys.map(key => {
@@ -86,5 +90,5 @@
       return { key, ...measurementValue(tag, state?.[key]) };
     });
   }
-  return { SelectionStore, entries, parameterPolicy, measurementValue, fitFrame, tankLevelGeometry, criticalReadouts };
+  return { SelectionStore, entries, parameterPolicy, measurementValue, fitFrame, tankLevelGeometry, pvReadout, criticalReadouts };
 });

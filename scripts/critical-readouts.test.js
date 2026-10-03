@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { criticalReadouts } = require('../public/control-workspace');
 const { fitFrame } = require('../public/control-workspace');
 const { tankLevelGeometry } = require('../public/control-workspace');
+const { pvReadout } = require('../public/control-workspace');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -59,5 +60,16 @@ test('tank illustration tracks live levels instead of placeholder fill heights',
   assert.deepEqual(tankLevelGeometry(125), tankLevelGeometry(100));
   for (const missing of [null, undefined, '', 'bad', NaN]) {
     assert.deepEqual(tankLevelGeometry(missing), { y:240, height:0 });
+  }
+});
+test('manual cascade PV uses live model measurements instead of the last PID calculation', () => {
+  const state = { ti1104:400, fi1105:21.554, outerPvValue:0, innerPvValue:0 };
+  assert.equal(pvReadout({ stateKey:'ti1104', unit:'℃' }, state, 1), '400.0 ℃');
+  assert.equal(pvReadout({ stateKey:'fi1105', unit:'kg/s' }, state, 2), '21.55 kg/s');
+  assert.equal(pvReadout({ stateKey:'h1', unit:'%' }, { h1:0 }, 1), '0.0 %');
+});
+test('unavailable loop measurements display a dash with no fabricated zero', () => {
+  for (const raw of [null, undefined, '', 'bad']) {
+    assert.equal(pvReadout({ stateKey:'h1', unit:'%' }, { h1:raw }, 1), '—');
   }
 });
