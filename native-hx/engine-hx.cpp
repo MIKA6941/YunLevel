@@ -660,8 +660,8 @@ void process_line(const std::string& line) {
         HxScoreSetConfig(du, ds, bh);
     } else if (cmd == "SCORE_MODE") {
         int mode = 0; iss >> mode;
-        if (s->running) {
-            emit_error("SCORE_MODE_RUNNING", "运行中不能切换评分方案");
+        if (HxScoreSessionActive()) {
+            emit_error("SCORE_MODE_RUNNING", "评分中不能切换评分方案");
             return;
         }
         if (mode < HX_SCORE_OFF || mode > HX_SCORE_SYSTEM) {

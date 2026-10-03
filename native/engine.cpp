@@ -227,14 +227,14 @@ void apply_high_score_template() {
 }
 
 void set_score_mode(int mode) {
-    if (g_engine.sys.running) return;
+    if (ScoreSessionActive()) return;
     if (mode < SCORE_OFF || mode > SCORE_SYSTEM) mode = SCORE_OFF;
     ScoreSetMode((ScoreMode)mode);
     g_engine.state_dirty = true;
 }
 
 void set_score_tank(int tank) {
-    if (g_engine.sys.running || g_score.mode != SCORE_TANK) return;
+    if (ScoreSessionActive() || g_score.mode != SCORE_TANK) return;
     if (tank < 0) tank = 0;
     if (tank > 2) tank = 2;
     g_score.tank = tank;
@@ -711,8 +711,8 @@ void process_line(const std::string& line) {
         ScoreSetConfig(du, ds, bt, bh, da, dm, dd);
     } else if (cmd == "SCORE_MODE") {
         int mode = 0; iss >> mode;
-        if (g_engine.sys.running) {
-            emit_error("SCORE_MODE_RUNNING", "运行中不能切换评分方案");
+        if (ScoreSessionActive()) {
+            emit_error("SCORE_MODE_RUNNING", "评分中不能切换评分方案");
             return;
         }
         if (mode < SCORE_OFF || mode > SCORE_SYSTEM) {

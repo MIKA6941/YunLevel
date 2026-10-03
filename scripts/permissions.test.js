@@ -31,7 +31,18 @@ test('student tuning is allowed, teacher rules and internal commands are protect
     assert.equal(restored.json.state.score.active,false);
     assert.equal(restored.json.state.sim_time,0);
     assert.equal(restored.json.state.sp3,65);
+    assert.equal(restored.json.state.nLoop, 1);
     const next = await cmd(s.cookie,'SCORE_START');
     assert.notEqual(next.json.state.score.attemptId,first.json.state.score.attemptId);
+    await cmd(s.cookie, 'RESET');
+    const raced = await Promise.all([cmd(s.cookie, 'SCORE_START'), api('/api/projects/2/restore', {}, s.cookie)]);
+    assert.ok([200, 409].includes(raced[0].status));
+    assert.ok([200, 409].includes(raced[1].status));
+    const afterRace = (await cmd(s.cookie, 'STATE')).json.state;
+    assert.equal(afterRace.score.active, raced[0].status === 200);
+    if (raced[0].status === 200) assert.equal(afterRace.score.attemptId, raced[0].json.state.score.attemptId);
+    const records = (await api('/api/teacher/records', undefined, t.cookie)).json.records;
+    assert.equal(records.length, 2);
+    assert.ok(records.every(record => record.attemptId && record.score.total === 0));
   });
 });

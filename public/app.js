@@ -4016,7 +4016,7 @@ function wireStudentControls() {
       if (state.running || Number(state.sim_time || 0) > 0.0001) return toast('请先回到冷态，再开始评分');
       if (!confirm('开始评分会清空回路与泵阀，并开始计时，是否继续？')) return;
       await sendCommand('SCORE_START');
-      toast('评分已开始，配置已清空，请重新搭建回路或使用教师模板');
+      toast('评分已开始，请按教师目标重新搭建回路并整定参数');
     } catch (e) { toast(e.message, true); }
   };
   document.querySelectorAll('[data-score-tank]').forEach((btn) => {

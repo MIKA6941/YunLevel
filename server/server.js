@@ -298,6 +298,10 @@ function requireRole(req, res, role) {
     sendJson(res, 401, { error: '请先登录' });
     return null;
   }
+  if (auth.ending) {
+    sendJson(res, 409, { code: 'SESSION_ENDED', error: '会话正在结束' });
+    return null;
+  }
   if (role && auth.role !== role) {
     sendJson(res, 403, { error: '没有权限' });
     return null;
@@ -308,6 +312,10 @@ function requireRole(req, res, role) {
 function requireSimulationRole(req, res) {
   const auth = requireRole(req, res);
   if (!auth) return null;
+  if (engineForAuth(auth)?.initializing) {
+    sendJson(res, 409, { code: 'SESSION_INITIALIZING', error: '正在恢复实验配置，请稍后' });
+    return null;
+  }
   if (auth.role !== 'student' && auth.role !== 'teacher') {
     sendJson(res, 403, { error: '没有仿真权限' });
     return null;
@@ -505,8 +513,10 @@ async function endAuth(auth, reason) {
   if (auth.ending) return auth.ending;
   auth.ending = (async () => {
     if (auth.role === 'teacher') return releaseTeacher(auth);
-    const engine = engineForAuth(auth);
+    let engine = engineForAuth(auth);
     if (engine) {
+      await engine.operations;
+      engine = engineForAuth(auth) || engine;
       await engine.operations;
       await finishStudentAttempt(engine, reason);
       try { await engine.send('DEACTIVATE'); await saveStudentRecovery(engine, reason); } catch {}
@@ -589,16 +599,15 @@ async function applyScoreConfigToEngine(engine, cfg, opts = {}) {
     return { ...identity, status: 'pending', message: '下一轮评分生效' };
   }
   try {
-    if (!engine.lastState?.running) {
-      await engine.send(`SCORE_MODE ${effective.mode}`);
-      await engine.send(`SCORE_TANK ${effective.tank}`);
-    }
+    await engine.send(`SCORE_MODE ${effective.mode}`);
+    await engine.send(`SCORE_TANK ${effective.tank}`);
     await engine.send(`SCORE_CFG ${effective.durationUnit} ${effective.durationSystem} ${effective.bandTank} ${effective.bandHx} ${effective.disturbAt} ${effective.disturbMv} ${effective.disturbDelta}`);
     const policy = require('./models').modelSpec(engine.modelId).scorePolicy;
     if (policy.initCommand && opts.applyInitTemp !== false && !engine.lastState?.running) await engine.send(`${policy.initCommand} ${effective.initTempHx}`);
     for (let i = 0; i < effective.targets.length; i++) await engine.send(`${policy.targetCommand} ${i} ${effective.targets[i]}`);
     engine.appliedScoreConfig = effective;
     engine.pendingScoreConfigRevision = null;
+    await engine.send('STATE');
     return { ...identity, status: 'applied' };
   } catch (err) {
     return { ...identity, status: 'failed', error: err.message };
@@ -630,6 +639,7 @@ async function applyHxInitTempToEngine(engine) {
 
 function attachEngine(engine) {
   engine.on('state', (state) => {
+    if (engine.initializing) return;
     if (state.score) {
       state.score.attemptId = engine.currentAttempt?.id || null;
       state.score.configRevision = engine.currentAttempt?.revision ?? engine.appliedScoreConfig?.revision ?? null;
@@ -639,7 +649,7 @@ function attachEngine(engine) {
     engine.appendHistory(state);
     broadcastToStudent(engine, 'state', state);
     broadcastToTeacherStudentWatchers(engine, state);
-    if (state.scoreEnded && engine.ownerRole !== 'teacher') appendScoreRecord(engine);
+    if (state.scoreEnded && engine.currentAttempt && engine.ownerRole !== 'teacher') appendScoreRecord(engine);
     persistAttempt(engine);
     if (engine.ownerRole !== 'teacher') broadcastOverview();
   });
@@ -878,11 +888,22 @@ async function handleCommandUnlocked(req, res, auth, body, options = {}) {
         config: { ...engine.appliedScoreConfig }, startedAt: new Date().toISOString() };
       persistAttempt(engine);
     }
-    if (name === 'RESET' && engine.ownerRole === 'student') await finishStudentAttempt(engine, 'reset');
+    if (name === 'SCORE_START' && engine.ownerRole === 'teacher' && engine.pendingScoreConfigRevision != null
+        && !engine.lastState?.running && !engine.lastState?.score?.active) {
+      const result = await applyScoreConfigToEngine(engine, null, { force: true });
+      if (result.status === 'failed') throw Object.assign(new Error(result.error), { code: 'CONFIG_APPLY_FAILED', statusCode: 503 });
+    }
+    if (name === 'RESET') {
+      if (engine.ownerRole === 'student') await finishStudentAttempt(engine, 'reset');
+      else if (engine.lastState?.score?.active) await engine.send('SCORE_FINISH');
+    }
     const state = await engine.send(cmd);
     if (engine.ownerRole === 'student' && ['RESET','SET_MODE'].includes(name)) {
       engine.currentAttempt = null;
       await applyScoreConfigToEngine(engine, null, { force: true });
+    } else if (engine.ownerRole === 'teacher' && name === 'RESET' && engine.pendingScoreConfigRevision != null) {
+      const result = await applyScoreConfigToEngine(engine, null, { force: true });
+      if (result.status === 'failed') throw Object.assign(new Error(result.error), { code: 'CONFIG_APPLY_FAILED', statusCode: 503 });
     } else if (engine.ownerRole === 'student' && name === 'SET_INLET_TEMP') {
       const policy = require('./models').modelSpec(engine.modelId).scorePolicy;
       const cfg = engine.currentAttempt?.config || engine.appliedScoreConfig;
@@ -891,7 +912,8 @@ async function handleCommandUnlocked(req, res, auth, body, options = {}) {
     return sendJson(res, 200, { ok: true, state: engine.lastState || state });
   } catch (err) {
     if (err.code) {
-      return sendJson(res, err.statusCode || 400, { ok: false, code: err.code, error: err.message || '控制命令被拒绝' });
+      const conflict = /^SCORE_START_|^SCORE_MODE_RUNNING$/.test(err.code);
+      return sendJson(res, err.statusCode || (conflict ? 409 : 400), { ok: false, code: err.code, error: err.message || '控制命令被拒绝' });
     }
     return sendJson(res, 500, { ok: false, error: err.message || '控制命令失败' });
   }
@@ -907,7 +929,8 @@ function studentProjectStatus(auth) {
   };
 }
 
-async function restoreStudentProject(auth, slot, reason = 'restore-project') {
+async function restoreStudentProject(auth, slot, reason = 'restore-project', unlocked = false) {
+  if (!unlocked) return studentRestoreOperation(auth, () => restoreStudentProject(auth, slot, reason, true));
   assertStudentRestoreAllowed(auth);
   const project = storeFor(auth.modelId).getProject(auth.classId, auth.studentId, slot);
   if (!project) throw Object.assign(new Error('该云端方案还没有保存内容'), { statusCode: 404 });
@@ -918,6 +941,8 @@ async function restoreStudentProject(auth, slot, reason = 'restore-project') {
   const options = studentEngineOptions(classInfo, auth.studentId, auth.name, auth.sessionKey, auth.modelId);
   storeFor(auth.modelId).copyProjectToEngine(project, options);
   const engine = new EngineSession(options);
+  engine.initializing = true;
+  engine.operations = old?.operations;
   attachEngine(engine);
   enginesByKey.set(auth.sessionKey, engine);
   await engine.start();
@@ -926,7 +951,8 @@ async function restoreStudentProject(auth, slot, reason = 'restore-project') {
   return { state: engine.lastState, history: engine.history, project: project.meta, reason };
 }
 
-async function restoreStudentRecovery(auth) {
+async function restoreStudentRecovery(auth, unlocked = false) {
+  if (!unlocked) return studentRestoreOperation(auth, () => restoreStudentRecovery(auth, true));
   assertStudentRestoreAllowed(auth);
   const recovery = storeFor(auth.modelId).getRecovery(auth.classId, auth.studentId);
   if (!recovery) throw Object.assign(new Error('没有可恢复的自动保存记录'), { statusCode: 404 });
@@ -937,6 +963,8 @@ async function restoreStudentRecovery(auth) {
   const options = studentEngineOptions(classInfo, auth.studentId, auth.name, auth.sessionKey, auth.modelId);
   storeFor(auth.modelId).copyProjectToEngine(recovery, options);
   const engine = new EngineSession(options);
+  engine.initializing = true;
+  engine.operations = old?.operations;
   attachEngine(engine);
   enginesByKey.set(auth.sessionKey, engine);
   await engine.start();
@@ -945,7 +973,8 @@ async function restoreStudentRecovery(auth) {
   return { state: engine.lastState, history: engine.history, recovery: recovery.meta };
 }
 
-async function restoreOwnCurrent(auth) {
+async function restoreOwnCurrent(auth, unlocked = false) {
+  if (auth.role === 'student' && !unlocked) return studentRestoreOperation(auth, () => restoreOwnCurrent(auth, true));
   if (auth.role === 'student') assertStudentRestoreAllowed(auth);
   const current = storeFor(auth.modelId).getCurrent(auth.classId, auth.studentId);
   if (!current) throw Object.assign(new Error('还没有保存当前状态'), { statusCode: 404 });
@@ -973,6 +1002,8 @@ async function restoreOwnCurrent(auth) {
   const options = studentEngineOptions(classInfo, auth.studentId, auth.name, auth.sessionKey, auth.modelId);
   storeFor(auth.modelId).copyProjectToEngine(current, options);
   const engine = new EngineSession(options);
+  engine.initializing = true;
+  engine.operations = old?.operations;
   attachEngine(engine);
   enginesByKey.set(auth.sessionKey, engine);
   await engine.start();
@@ -982,9 +1013,15 @@ async function restoreOwnCurrent(auth) {
 }
 
 function assertStudentRestoreAllowed(auth) {
+  if (auth.ending) throw Object.assign(new Error('会话正在结束'), { statusCode: 409, code: 'SESSION_ENDED' });
   if (engineForAuth(auth)?.lastState?.score?.active) {
     throw Object.assign(new Error('评分进行中不能恢复方案'), { statusCode: 409, code: 'ASSESSMENT_LOCKED' });
   }
+}
+function studentRestoreOperation(auth, operation) {
+  const engine = engineForAuth(auth);
+  if (!engine) throw Object.assign(new Error('会话不存在'), { statusCode: 404, code: 'SESSION_NOT_FOUND' });
+  return runEngineOperation(engine, operation);
 }
 async function prepareStudentRestore(engine) {
   await engine.send('SCORE_END');
@@ -992,6 +1029,8 @@ async function prepareStudentRestore(engine) {
   engine.currentAttempt = null;
   const result = await applyScoreConfigToEngine(engine, null, { force: true });
   if (result.status === 'failed') throw Object.assign(new Error(result.error), { statusCode: 503, code: 'CONFIG_APPLY_FAILED' });
+  engine.initializing = false;
+  await engine.send('STATE');
 }
 
 // 教师端跨模型：按需为某个模型起教师仿真会话。
@@ -1910,6 +1949,7 @@ server.listen(config.port, '0.0.0.0', () => {
 
 setInterval(() => {
   for (const engine of enginesByKey.values()) {
+    if (engine.initializing || engine.stopping) continue;
     const state = engine.lastState;
     if (!state) continue;
     const score = state.score || {};
