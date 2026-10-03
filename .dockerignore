@@ -1,0 +1,22 @@
+# 运行期数据（学生状态、曲线历史、评分记录）不进镜像
+data
+# 本地编译产物由 Docker 内部重新编译
+native/build
+native-hx/build
+bin
+# 依赖与日志
+node_modules
+npm-debug.log
+*.log
+# 临时/测试文件
+cookies.txt
+teacher.txt
+*.tmp
+.tmp-*
+.test-data-*
+scripts/round01
+.git
+.gitignore
+docs
+README.md
+*.md

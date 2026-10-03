@@ -1,0 +1,28 @@
+services:
+  yunlevel:
+    build: .
+    image: yunlevel:1.0.0
+    container_name: yunlevel
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      YUN_DATA_DIR: /app/data
+      # 首次生成空班级时使用；后续班级码在教师“班级管理”中维护
+      # ⚠️ 必须在项目目录的 .env 文件里设置，未设置时 docker compose 会直接报错
+      YUN_CLASS_CODE: "${YUN_CLASS_CODE:?请先设置班级码：在 .env 写入 YUN_CLASS_CODE=你的班级码}"
+      YUN_TEACHER_CODE: "${YUN_TEACHER_CODE:?请先设置教师口令：在 .env 写入 YUN_TEACHER_CODE=你的教师口令}"
+      # 单台服务器允许的最大同时在线人数
+      YUN_MAX_SESSIONS: "120"
+      # 走 HTTPS（反向代理）时设为 1，登录 Cookie 加 Secure
+      YUN_COOKIE_SECURE: "0"
+    volumes:
+      # 学生状态、曲线历史、评分记录都落在这里，升级容器不会丢
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

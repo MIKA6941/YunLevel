@@ -1,0 +1,30 @@
+# 默认：入库统一 LF，检出时不转换
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell 脚本必须是 LF，否则 Linux 上报 "bad interpreter: ^M"
+*.sh  text eol=lf
+
+# 真正的二进制，禁止任何换行符转换（避免被 git 改坏）
+*.exe binary
+*.bin binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.gz  binary
+
+# 让 git diff 更易读
+*.js   text diff=javascript
+*.c    text diff=cpp
+*.cpp  text diff=cpp
+*.h    text diff=cpp
+*.md   text diff=markdown
+
+# GitHub 语言统计：不把第三方库算成本项目代码
+public/vendor/* linguist-vendored

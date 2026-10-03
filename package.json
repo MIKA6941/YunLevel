@@ -1,0 +1,18 @@
+{
+  "name": "yunlevel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "三级液位 PID 云仿真：服务器多用户版（C++ 仿真内核 + Node 网关 + 原生前端）",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "prestart": "node scripts/ensure-engine.js",
+    "build:engine": "node scripts/build-engine.js",
+    "check": "node --check server/config.js && node --check server/models.js && node --check server/storage.js && node --check server/roster-store.js && node --check server/engine-session.js && node --check server/snapshot-store-v2.js && node --check server/zip-builder.js && node --check server/server.js && node --check public/app.js"
+
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}
