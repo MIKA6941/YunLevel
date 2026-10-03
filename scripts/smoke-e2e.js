@@ -21,10 +21,11 @@
  * Exit code 0 = all checks passed.
  */
 
-const { spawn, execSync } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { removeTestDir } = require('./test-support');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.SMOKE_PORT || 8097);
@@ -62,6 +63,7 @@ function sleep(ms) {
 }
 
 const state = { teacher: '', student: '', classId: '', hxTeacher: '', hxStudent: '' };
+const loggedInCookies = new Set();
 
 async function api(urlPath, opts) {
   opts = opts || {};
@@ -81,6 +83,7 @@ async function api(urlPath, opts) {
     const list = res.headers.getSetCookie();
     if (list.length) cookie = list.map(function (c) { return c.split(';')[0]; }).join('; ');
   }
+  if (urlPath === '/api/login' && res.status === 200 && cookie) loggedInCookies.add(cookie);
   return { status: res.status, text: text, json: json, cookie: cookie, headers: res.headers };
 }
 
@@ -100,16 +103,21 @@ async function waitHealth(timeoutMs) {
   throw new Error('server did not become healthy: ' + last);
 }
 
-function enginePids() {
-  try {
-    const out = execSync(
-      'powershell -NoProfile -Command "Get-Process YunEngine -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"',
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
-    );
+function enginePids(dataDir) {
+  if (process.platform === 'win32') {
+    const escaped = dataDir.replace(/'/g, "''");
+    const out = execFileSync('C:\\Program Files\\PowerShell\\7\\pwsh.exe', ['-NoProfile', '-Command',
+      `Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'YunEngine.exe','HxEngine.exe' -and $_.CommandLine -like '*${escaped}*' } | Select-Object -ExpandProperty ProcessId`],
+      { encoding: 'utf8', windowsHide: true });
     return out.split(/\s+/).filter(Boolean).map(Number);
-  } catch (err) {
-    return [];
   }
+  if (process.platform === 'linux') return fs.readdirSync('/proc').filter(p => /^\d+$/.test(p)).map(Number).filter(pid => {
+    try {
+      const exe = fs.readlinkSync(`/proc/${pid}/exe`);
+      return ['YunEngine', 'HxEngine'].includes(path.basename(exe)) && fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes(dataDir);
+    } catch { return false; }
+  });
+  throw new Error('Process cleanup verification supports Windows (PowerShell 7) and Linux.');
 }
 
 function cmdAs(cookie, cmdText) {
@@ -147,7 +155,7 @@ async function main() {
   console.log('port      : ' + PORT);
   console.log('data dir  : ' + dataDir);
 
-  const before = enginePids();
+  const before = enginePids(dataDir);
   const child = spawn(process.execPath, [path.join(ROOT, 'server', 'server.js')], {
     cwd: ROOT,
     env: Object.assign({}, process.env, {
@@ -606,7 +614,7 @@ async function main() {
     let guardOk = true;
     try { models.assertStateBelongsToModel(tankBin, 'tank'); } catch (err) { guardOk = false; }
     check('tank state accepted on the tank model', guardOk);
-    fs.rmSync(magicDir, { recursive: true, force: true });
+    removeTestDir(magicDir);
 
     // 名单变更要同时清掉学生在两个模型上的会话。
     const addHx = await api('/api/teacher/classes/' + state.classId + '/students', {
@@ -632,17 +640,20 @@ async function main() {
     failures.push('exception :: ' + (err && err.stack ? err.stack : err));
     console.log('  FAIL  exception :: ' + (err && err.message ? err.message : err));
   } finally {
+    for (const cookie of loggedInCookies) {
+      try { await api('/api/logout', { method: 'POST', cookie, body: {} }); } catch {}
+    }
+    await sleep(1500);
     try { child.kill(); } catch (err) { /* ignore */ }
-    await sleep(800);
-    const leaked = enginePids().filter(function (pid) { return before.indexOf(pid) < 0; });
+    await sleep(200);
+    const leaked = enginePids(dataDir).filter(function (pid) { return before.indexOf(pid) < 0; });
+    check('all test kernels exited without leaks', leaked.length === 0, leaked.join(','));
     if (leaked.length) {
       console.log('cleaning leaked engine pids: ' + leaked.join(','));
-      try {
-        execSync('powershell -NoProfile -Command "Stop-Process -Id ' + leaked.join(',') + ' -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
-      } catch (err) { /* ignore */ }
+      for (const pid of leaked) { try { process.kill(pid, 'SIGKILL'); } catch {} }
     }
     if (!KEEP_DATA) {
-      try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (err) { /* ignore */ }
+      removeTestDir(dataDir);
     }
   }
 
