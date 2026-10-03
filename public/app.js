@@ -15,6 +15,7 @@ const app = {
   view: 'control',
   state: null,
   loopSelection: new ControlWorkspace.SelectionStore(),
+  parameterSlider: null,
   history: {},
   streams: { level: new Set(['h1', 'h2', 'h3', 'sp1', 'sp2', 'sp3']), flow: new Set(['qin', 'q12', 'q23', 'qout']), valve: new Set(['pump', 'fv101', 'fv102', 'fv103', 'fv104']) },
   simEventSource: null,
@@ -729,6 +730,7 @@ function setConnection(ok, text) {
 }
 
 function showLogin(error = '') {
+  app.parameterSlider?.close();
   app.loopSelection.clear();
   $('loopCards')?.replaceChildren();
   if ($('loopCards')) delete $('loopCards').dataset.signature;
@@ -765,6 +767,7 @@ function showApp() {
 }
 
 function switchView(view) {
+  app.parameterSlider?.close();
   if (view === 'score') {
     const score = app.state?.score || {};
     if (score.active && !score.finished) {
@@ -1314,6 +1317,10 @@ function renderLoopWorkspace(loops, cascades) {
 }
 
 function wireControlWorkspace() {
+  app.parameterSlider = ParameterSlider.bind(document, {
+    selector: '#loopCards input[data-field], #manualControls .field-grid input[type="number"]',
+    getPolicy: parameterSliderPolicy,
+  });
   document.querySelectorAll('[data-control-tab]').forEach(button => {
     button.onclick = () => {
       const manual = button.dataset.controlTab === 'manual';
@@ -1322,6 +1329,23 @@ function wireControlWorkspace() {
       document.querySelectorAll('[data-control-tab]').forEach(tab => tab.setAttribute('aria-pressed', String(tab === button)));
     };
   });
+}
+
+function parameterSliderPolicy(input) {
+  const label = input.closest('label')?.textContent.trim() || '参数';
+  const field = (input.dataset.field || '').toLowerCase().replace(/^(outer|inner)/, '');
+  if (field === 'ti') return { label, min:0.1, max:1200, step:0.1, allowInfinity:true };
+  if (field === 'kp') return { label, min:0, max:10, step:0.01 };
+  if (field === 'td') return { label, min:0, max:300, step:0.1 };
+  if (field === 'sp') {
+    return label.includes('℃')
+      ? { label, min:250, max:650, step:0.1 }
+      : { label, min:0, max:100, step:0.1 };
+  }
+  if (field === 'manualout' || input.closest('#manualControls')) {
+    return { label, min:0, max:100, step:0.1, hardMin:0, hardMax:100 };
+  }
+  return null;
 }
 
 function setLoopCardInput(card, field, value) {
