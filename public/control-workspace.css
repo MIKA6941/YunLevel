@@ -50,7 +50,8 @@ button, input, select, textarea { transition-timing-function:var(--motion-ease);
 .loop-workspace .loop-card .button-row .danger { background:transparent; }
 .loop-workspace .loop-card-head strong { font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
 .cascade-group { min-width:0; margin:20px 0 0; padding:0; border:0; }
-.cascade-group + .cascade-group { padding-top:20px; border-top:1px solid var(--line); }
+.cascade-group:not(:last-of-type) { padding-bottom:16px; border-bottom:1px solid var(--line); }
+.cascade-group + .cascade-group { margin-top:16px; }
 .cascade-group legend { padding:0; color:var(--text); font-size:14px; font-weight:600; }
 .cascade-group .loop-pv { margin-top:8px; }
 .loop-workspace .cascade-group .field-grid { margin:12px 0 0; }
@@ -96,6 +97,7 @@ button[data-submitting="1"]::before { content:""; width:12px; height:12px; flex:
 @keyframes parameter-loading { to { transform:rotate(360deg); } }
 :root[data-motion-paused="true"] button[data-submitting="1"]::before,
 .hidden button[data-submitting="1"]::before { animation:none; }
+:root[data-motion-paused="true"] .process-visual * { animation-play-state:paused; transition:none; }
 @media(prefers-reduced-motion:reduce) {
   button[data-submitting="1"]::before { animation:none; }
   button, input, select, textarea { transition:none; }
