@@ -43,11 +43,12 @@
       const current = state(root);
       const dirty = inputs.some(input => input.dataset.dirty === '1');
       const editable = inputs.some(input => !input.disabled && !input.readOnly);
+      if (root.id !== 'manualControls') setReadonlyActions(Array.from(root.querySelectorAll('button')), !editable);
       let phase = 'idle';
       let message = '修改后点击应用，参数才会生效。';
       if (current.pending) { phase = 'pending'; message = '正在应用参数…'; }
-      else if (current.error) { phase = 'error'; message = `应用未完成：${current.error}。草稿已保留，请检查后重试。`; }
       else if (!editable) { phase = 'readonly'; message = '当前参数只读，不能应用修改。'; }
+      else if (current.error) { phase = 'error'; message = `应用未完成：${current.error}。草稿已保留，请检查后重试。`; }
       else if (dirty) { phase = 'draft'; message = '有未应用的草稿。'; }
       else if (current.applied) { phase = 'applied'; message = '参数已应用。'; }
       let output = root.querySelector('.parameter-feedback');
@@ -108,5 +109,16 @@
       destroy() { observer.disconnect(); doc.removeEventListener('input', onInput); },
     };
   }
-  return { applyDraft, bind };
+  function setReadonlyActions(buttons, readonly) {
+    buttons.forEach(button => {
+      if (readonly) {
+        if (button.dataset.feedbackDisabled === undefined) button.dataset.feedbackDisabled = String(button.disabled);
+        if (!button.disabled) button.disabled = true;
+      } else if (button.dataset.feedbackDisabled !== undefined) {
+        button.disabled = button.dataset.feedbackDisabled === 'true';
+        delete button.dataset.feedbackDisabled;
+      }
+    });
+  }
+  return { applyDraft, bind, setReadonlyActions };
 });

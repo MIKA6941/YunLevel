@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { applyDraft } = require('../public/parameter-feedback');
+const { setReadonlyActions } = require('../public/parameter-feedback');
 const input = value => ({ value, dataset:{ dirty:'1' } });
 
 test('a late successful reply preserves edits made while the request is in flight', async () => {
@@ -33,4 +34,13 @@ test('clearing a submitted field while waiting remains an unapplied draft', asyn
   const field = input('60');
   await applyDraft([field], async () => { field.value = ''; });
   assert.equal(field.dataset.dirty, '1');
+});
+test('observation disables every loop action and control promotion restores prior constraints', () => {
+  const actions = [{ disabled:false, dataset:{} }, { disabled:true, dataset:{} }];
+  setReadonlyActions(actions, true);
+  setReadonlyActions(actions, true);
+  assert.ok(actions.every(action => action.disabled));
+  setReadonlyActions(actions, false);
+  assert.deepEqual(actions.map(action => action.disabled), [false, true]);
+  assert.ok(actions.every(action => action.dataset.feedbackDisabled === undefined));
 });
