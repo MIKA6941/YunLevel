@@ -8,6 +8,8 @@ on:
       - 'scripts/test-controls.js'
       - 'scripts/control-workspace.test.js'
       - 'scripts/parameter-slider.test.js'
+      - 'scripts/critical-readouts.test.js'
+      - 'scripts/parameter-feedback.test.js'
       - 'package.json'
       - '.github/workflows/control-workspace.yml'
   workflow_dispatch:
@@ -29,5 +31,5 @@ jobs:
           package-manager-cache: false
       - name: Check JavaScript syntax
         run: npm run check
-      - name: Test control workspace and parameter sliders
+      - name: Test workspace, readouts, feedback and sliders
         run: npm run test:controls
