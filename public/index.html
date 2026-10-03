@@ -15,9 +15,9 @@
       <div class="brand-mark">YL</div>
       <h1 id="loginTitle">PID 云仿真</h1>
       <p class="muted">同一服务器，独立会话；登录后每位学生拥有自己的仿真状态。</p>
-      <div class="login-tabs">
-        <button class="login-tab active" data-role="student">学生登录</button>
-        <button class="login-tab" data-role="teacher">教师登录</button>
+      <div class="login-tabs" role="group" aria-label="登录角色">
+        <button class="login-tab active" data-role="student" aria-pressed="true">学生登录</button>
+        <button class="login-tab" data-role="teacher" aria-pressed="false">教师登录</button>
       </div>
       <form id="studentLoginForm" class="login-form">
         <label>实验模型<select id="studentModel"><option value="tank">三级液位</option><option value="hx" class="hx-model-option hidden">换热器</option></select></label>

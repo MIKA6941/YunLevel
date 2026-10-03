@@ -4415,7 +4415,10 @@ function wireLogin() {
   };
   document.querySelectorAll('.login-tab').forEach((tab) => {
     tab.onclick = () => {
-      document.querySelectorAll('.login-tab').forEach((x) => x.classList.toggle('active', x === tab));
+      document.querySelectorAll('.login-tab').forEach((x) => {
+        x.classList.toggle('active', x === tab);
+        x.setAttribute('aria-pressed', String(x === tab));
+      });
       $('studentLoginForm').classList.toggle('hidden', tab.dataset.role !== 'student');
       $('teacherLoginForm').classList.toggle('hidden', tab.dataset.role !== 'teacher');
     };
