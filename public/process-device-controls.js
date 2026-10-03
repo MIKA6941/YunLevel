@@ -126,6 +126,8 @@
         const latest = ctx();
         if (latest.model !== model || latest.account !== account || !canWrite(latest.account)) throw new Error('会话或控制权已变化，请重新操作');
         if (entry && !latest.entries.some(item => item.key === entry.key && item.index === entry.index)) throw new Error('回路已变化，请重新选择');
+        if (entry && (!root.isConnected || doc.querySelector(`[data-${entry.kind === 'loop' ? 'loop' : 'casc'}-card="${entry.index}"]`) !== root)) throw new Error('回路已变化，请重新选择');
+        if (used.some(source => !source.isConnected)) throw new Error('参数表单已变化，请重新选择设备');
         if (!entry && doc.getElementById(device.manual)?.disabled) throw new Error('设备已由回路控制，请通过回路操作');
       };
       return options.feedback.submit(button, async () => { for (const command of commands) { check(); await options.send(command); } }, { inputs:used });

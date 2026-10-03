@@ -19,7 +19,7 @@ function fixture(role = 'teacher', casc = false) {
   Object.entries(values).forEach(([key,value]) => fields.set(key, field(value)));
   fields.set('pumpInput', field(42)); fields.set('fv104Input', field(88));
   const button = {};
-  const root = { querySelector:() => button };
+  const root = { isConnected:true,querySelector:() => button };
   const doc = { querySelector:selector => {
     if (selector.includes('-card=')) return root;
     return fields.get(/data-field="([^"]+)"/.exec(selector)?.[1]);
@@ -31,7 +31,7 @@ function fixture(role = 'teacher', casc = false) {
     manualTargets:[{ id:'pumpInput',cmd:'PUMP',label:'P101' },{ id:'fv104Input',cmd:'VALVE',mv:3,label:'FV104' }] }),
     policy:() => ({ min:0,max:100,step:1 }),send:cmd => send(cmd),
     feedback:{ async submit(_, action, { inputs }) { scopes.push(inputs); await applyDraft(inputs, action); return { ok:true }; } } });
-  return { state,fields,controls,commands,scopes,key:entries(state.loops,state.cascades)[0].key,
+  return { state,fields,controls,commands,scopes,root,key:entries(state.loops,state.cascades)[0].key,
     setSend(fn) { send = fn; },observe() { account.viewOnly = true; },switchModel() { model = 'hx'; } };
 }
 test('manual commands validate boundaries and cannot manufacture an unknown command', () => {
@@ -99,6 +99,22 @@ test('model switches and control loss during a multi-command action reject the r
     await assert.rejects(f.controls.act(devices('tank')[2],f.key,'pid'), /控制权已变化/);
     assert.equal(f.commands.length, 1);
   }
+});
+test('a deleted and recreated identical loop cannot receive the remainder of an old apply', async () => {
+  const f = fixture();
+  f.setSend(async cmd => { f.commands.push(cmd); f.root.isConnected = false; });
+  await assert.rejects(f.controls.act(devices('tank')[2],f.key,'pid'), /回路已变化/);
+  assert.equal(f.commands.length, 1);
+  assert.equal(f.fields.get('kp').dataset.dirty, '1');
+});
+test('mode actions keep a stable control list while automatic outputs remain disabled', () => {
+  const f = fixture(); const device = devices('tank')[3];
+  const before = f.controls.describe(device,f.key).actions;
+  assert.equal(before.find(action => action.id === 'output-loop').disabled, true);
+  f.state.loops[0].manual = true;
+  const after = f.controls.describe(device,f.key).actions;
+  assert.deepEqual(before.map(action => action.id), after.map(action => action.id));
+  assert.equal(after.find(action => action.id === 'output-loop').disabled, false);
 });
 test('typed infinity keeps the existing PID contract and invalid parameters fail before commands', () => {
   assert.match(pidCommand({ kind:'loop',index:0,value:loop() }, 'loop', { ti:'∞' }), /0\.5 -1 60/);

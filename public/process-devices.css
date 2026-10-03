@@ -19,6 +19,7 @@
 .device-field-group legend { color:var(--text); font-size:14px; font-weight:600; margin-bottom:8px; }
 .device-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .device-field { min-width:0; }
+.device-field:only-child { grid-column:1 / -1; }
 .device-field > label { display:block; }
 .device-fields label, .device-loop-choice { min-width:0; color:var(--muted); font-size:12px; line-height:1.5; }
 .device-fields input { min-width:0; width:100%; font-size:14px; }
@@ -33,6 +34,10 @@
 .device-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .device-actions button { min-height:40px; white-space:normal; }
 .device-actions .primary { grid-column:1 / -1; }
+.device-actions button[aria-disabled="true"] { cursor:default; }
+.device-pid-details { margin:16px 0; border-top:1px solid var(--line); padding-top:12px; }
+.device-pid-details > summary { cursor:pointer; color:var(--text); font-size:14px; }
+.device-pid-details .device-field-group { margin-bottom:12px; }
 @media(width < 900px) {
   .process-device-panel { width:100%; max-width:none; border-radius:12px 12px 0 0; padding:16px 20px calc(16px + env(safe-area-inset-bottom)); }
   .device-close { width:44px; height:44px; flex-basis:44px; }

@@ -97,7 +97,7 @@
       const width = viewport?.width || view.innerWidth, height = viewport?.height || view.innerHeight;
       const top = viewport?.offsetTop || 0;
       panel.style.maxHeight = Math.max(120, height - 24) + 'px';
-      if (width < 900) {
+      if (view.matchMedia('(width < 900px)').matches) {
         panel.style.left = (viewport?.offsetLeft || 0) + 'px';
         panel.style.top = ''; panel.style.bottom = Math.max(0, view.innerHeight - top - height) + 'px';
         return;
@@ -142,13 +142,18 @@
           const hint = doc.createElement('p'); hint.className = 'device-hint'; hint.textContent = '此设备关联多个回路，选择后调节。'; content.append(hint);
           return;
         }
-        let groupName = null, grid;
+        const advanced = doc.createElement('details'); advanced.className = 'device-pid-details';
+        const summary = doc.createElement('summary'); summary.textContent = 'PID 参数'; advanced.append(summary);
+        const grids = new Map();
         data.fields.forEach(field => {
-          if (groupName !== field.group || !grid) {
-            groupName = field.group;
+          const pid = /(?:kp|ti|td)$/i.test(field.key);
+          const groupKey = `${pid}:${field.group || ''}`;
+          let grid = grids.get(groupKey);
+          if (!grid) {
             const group = doc.createElement('fieldset'); group.className = 'device-field-group';
-            if (groupName) { const legend = doc.createElement('legend'); legend.textContent = groupName; group.append(legend); }
-            grid = doc.createElement('div'); grid.className = 'device-fields'; group.append(grid); content.append(group);
+            if (field.group) { const legend = doc.createElement('legend'); legend.textContent = field.group; group.append(legend); }
+            grid = doc.createElement('div'); grid.className = 'device-fields'; group.append(grid);
+            (pid ? advanced : content).append(group); grids.set(groupKey,grid);
           }
           const wrap = doc.createElement('div'); wrap.className = 'device-field';
           const label = doc.createElement('label'); label.textContent = field.label;
@@ -173,6 +178,7 @@
           if (infinity) infinity.onchange = () => write(binding, infinity.checked ? 'inf' : binding.memory ?? field.policy.min);
           bindings.push(binding);
         });
+        if (advanced.children.length > 1) { advanced.addEventListener('toggle', position); content.append(advanced); }
         const hint = doc.createElement('p'); hint.className = 'device-hint'; hint.textContent = data.readonly;
         content.append(hint);
         const feedback = doc.createElement('p'); feedback.className = 'device-feedback parameter-feedback';
@@ -182,10 +188,10 @@
           const button = doc.createElement('button'); button.type = 'button'; button.dataset.deviceAction = action.id;
           button.className = action.primary ? 'primary' : ''; button.textContent = action.label;
           button.onclick = async () => {
-            if (!active || button.disabled) return;
+            if (!active || button.disabled || active.pending) return;
             const saved = active, device = saved.device, loopKey = saved.loopKey;
-            saved.error = '';
-            button.disabled = true;
+            saved.error = ''; saved.pending = true;
+            button.setAttribute('aria-disabled','true');
             try {
               const result = await options.controls.act(device, loopKey, action.id);
               if (active === saved && result?.ok) { refresh();
@@ -193,7 +199,7 @@
                 if (output?.dataset.phase === 'applied') options.motion?.confirm(output); }
             } catch (error) {
               if (active === saved) { saved.error = `${error.message}。草稿已保留。`; }
-            } finally { if (active === saved) { button.disabled = false; syncFields(); position(); } }
+            } finally { saved.pending = false; if (active === saved) { syncFields(); position(); } }
           };
           actions.append(button);
         });
@@ -231,7 +237,8 @@
       panel.setAttribute('aria-busy', String(pending));
       data.actions.forEach(action => {
         const button = panel.querySelector(`[data-device-action="${action.id}"]`);
-        if (button) { button.disabled = action.disabled || pending;
+        if (button) { button.disabled = action.disabled;
+          button.setAttribute('aria-disabled', String(action.disabled || pending));
           button.textContent = pending && action.primary ? '应用中…' : action.label;
           if (pending && action.primary) button.dataset.submitting = '1'; else delete button.dataset.submitting; }
       });
