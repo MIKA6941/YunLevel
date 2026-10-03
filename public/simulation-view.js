@@ -107,7 +107,7 @@
       cancel();
       if (event.type === 'pointerup' && !tap.moving && distance < threshold && inside) {
         onTap?.(tap.target);
-        emit('simulation:activate', { target:tap.target });
+        emit('simulation:activate', { target:tap.target, clientX:event.clientX, clientY:event.clientY });
       }
     }
     viewport.addEventListener('pointerdown', (event) => {

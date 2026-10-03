@@ -123,6 +123,17 @@ test('cancellation, leaving the viewport and a far release cannot activate a dev
     assert.equal(taps, 0, reason);
   }
 });
+test('tap notifications retain release coordinates for overlapping device targets', () => {
+  const viewport = surface(), host = surface(), events = [];
+  viewport.ownerDocument = { defaultView:host };
+  host.CustomEvent = class { constructor(type, args) { this.type = type; Object.assign(this,args); } };
+  viewport.dispatchEvent = event => events.push(event);
+  bindPan(viewport, { getPan:() => ({ x:0,y:0 }),onPan:() => {} });
+  viewport.fire('pointerdown'); host.fire('pointerup', { clientX:103,clientY:81 });
+  assert.equal(events[0].type, 'simulation:activate');
+  assert.equal(events[0].bubbles, true);
+  assert.equal(events[0].detail.clientX, 103); assert.equal(events[0].detail.clientY, 81);
+});
 
 const geometry = { width: 1100, height: 470, viewportWidth: 720, viewportHeight: 478 };
 function fittedCamera(overrides = {}) {
