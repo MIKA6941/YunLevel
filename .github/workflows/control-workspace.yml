@@ -11,6 +11,8 @@ on:
       - 'scripts/critical-readouts.test.js'
       - 'scripts/parameter-feedback.test.js'
       - 'scripts/workspace-motion.test.js'
+      - 'scripts/process-devices.test.js'
+      - 'scripts/process-device-controls.test.js'
       - 'package.json'
       - '.github/workflows/control-workspace.yml'
   workflow_dispatch:
@@ -32,5 +34,5 @@ jobs:
           package-manager-cache: false
       - name: Check JavaScript syntax
         run: npm run check
-      - name: Test workspace, motion, readouts, feedback and sliders
+      - name: Test workspace, devices, motion, readouts, feedback and sliders
         run: npm run test:controls
