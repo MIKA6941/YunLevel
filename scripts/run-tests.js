@@ -12,4 +12,5 @@ for (const script of ['build-engine.js', 'build-selftest.js', 'check.js']) run(p
 const tests = fs.readdirSync(path.join(root, 'scripts')).filter(file => file.endsWith('.test.js')).sort().map(file => path.join('scripts', file));
 run(process.execPath, ['--test', ...tests]);
 run(path.join(root, process.platform === 'win32' ? 'native-hx/build/selftest_hx.exe' : 'bin/selftest_hx'), []);
+run(path.join(root, process.platform === 'win32' ? 'native/build/selftest_tank.exe' : 'bin/selftest_tank'), []);
 run(process.execPath, ['scripts/smoke-e2e.js']);

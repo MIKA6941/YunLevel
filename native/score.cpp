@@ -553,9 +553,10 @@ void ScoreTick(const TankSystem* s, double dt) {
 
     for (int pv = 0; pv < 3; ++pv) {
         const double sp = level_sp(s, pv);
-        const double q_ref = TorricelliQ(sp / 100.0 * TANK_H_MM * MM2M) * M3S2LMIN;
         const double valve_pct = (pv == 0) ? s->valve_12 : (pv == 1 ? s->valve_23 : s->valve_out);
-        q.ref_outflow_volume_l[pv] += q_ref * clampd_s(valve_pct, 0.0, 100.0) / 100.0 * vol_scale;
+        const double q_ref = GravityPipeQ(pv, sp / 100.0 * TANK_H_MM * MM2M,
+            valve_pct) * M3S2LMIN;
+        q.ref_outflow_volume_l[pv] += q_ref * vol_scale;
     }
 
     const double eq = (std::fabs(qin - q12) + std::fabs(q12 - q23) + std::fabs(q23 - qout)) / 3.0;
