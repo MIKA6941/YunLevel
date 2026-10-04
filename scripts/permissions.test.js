@@ -9,7 +9,7 @@ test('student tuning is allowed, teacher rules and internal commands are protect
     await api(`/api/teacher/classes/${cls.id}/students`,{studentId:'S1',name:'One'},t.cookie);
     await api('/api/teacher/settings',{scoreSystemOn:true,scoreConfig:{sp3:65,modeTank:1}},t.cookie);
     const s = await api('/api/login',{classCode:'CORE26',studentId:'S1',name:'One'});
-    for (const command of ['HIGH_SCORE','PRESET','TEMPLATE_A','SET_SP 2 20','SET_FLOW_SP 0 20','SET_PVX_SP 0 20',
+    for (const command of ['SET_BIAS 1','SET_BIAS 0','HIGH_SCORE','PRESET','TEMPLATE_A','SET_SP 2 20','SET_FLOW_SP 0 20','SET_PVX_SP 0 20',
       'SCORE_CFG 60 120 10 20 0 0 0','SCORE_MODE 2','SCORE_TANK 0','TICK 1','SAVE','QUIT','DEACTIVATE','SCORE_FINISH']) {
       assert.equal((await cmd(s.cookie,command)).status,403,command);
     }

@@ -167,7 +167,8 @@ class EngineSession extends EventEmitter {
   start() {
     if (this.child) return this.startPromise;
     if (this.exited) return Promise.reject(new Error('engine session has exited'));
-    const args = this.engineArgs || ['--state-file', this.stateFile];
+    const args = this.engineArgs || ['--state-file', this.stateFile,
+      ...(this.ownerRole === 'student' ? ['--no-pid-bias'] : [])];
     this.child = spawn(this.enginePath, args, {
       cwd: path.dirname(this.enginePath),
       stdio: ['pipe', 'pipe', 'pipe'],

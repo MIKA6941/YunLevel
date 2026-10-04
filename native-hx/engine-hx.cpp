@@ -39,6 +39,7 @@ struct Engine {
 };
 
 Engine g_engine;
+bool g_bias_allowed = true;
 
 double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
@@ -96,7 +97,7 @@ void load_state() {
     g_engine.sys = saved;
     g_hxScore = savedScore;
     g_hxScore.session_just_end = false;
-    g_engine.bias = h.bias != 0u;
+    g_engine.bias = g_bias_allowed && h.bias != 0u;
     g_engine.scenario = (int)h.scenario;
     g_usePidBias = g_engine.bias;
 }
@@ -409,7 +410,7 @@ void process_line(const std::string& line) {
     } else if (cmd == "SET_BIAS") {
         int v = 0;
         iss >> v;
-        g_engine.bias = v != 0;
+        g_engine.bias = g_bias_allowed && v != 0;
         g_usePidBias = g_engine.bias;
         state_changed = true;
     } else if (cmd == "SET_MODE") {
@@ -724,6 +725,8 @@ int main(int argc, char** argv) {
         } else if (arg == "--scenario" && i + 1 < argc) {
             g_engine.scenario = std::atoi(argv[++i]);
             reset_to_cold();
+        } else if (arg == "--no-pid-bias") {
+            g_bias_allowed = false;
         }
     }
     load_state();

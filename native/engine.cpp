@@ -45,6 +45,7 @@ struct Engine {
 };
 
 Engine g_engine;
+bool g_bias_allowed = true;
 
 double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
@@ -118,7 +119,7 @@ void load_state() {
 
     g_engine.sys = savedSys;
     g_score = savedScore;
-    g_engine.bias = h.bias != 0;
+    g_engine.bias = g_bias_allowed && h.bias != 0;
     g_engine.sim_time = h.sim_time;
     g_engine.paused = false;
     g_engine.sys.running = false;
@@ -220,8 +221,8 @@ void apply_high_score_template() {
     TankSystem* s = &g_engine.sys;
     if (s->running) return;
     ApplyHighScoreTemplate(s);
-    g_engine.bias = true;
-    g_usePidBias = true;
+    g_engine.bias = g_bias_allowed;
+    g_usePidBias = g_engine.bias;
     open_free_valves();
     g_engine.state_dirty = true;
 }
@@ -571,7 +572,7 @@ void process_line(const std::string& line) {
         state_changed = true;
     } else if (cmd == "SET_BIAS") {
         int v = 0; iss >> v;
-        g_engine.bias = v != 0;
+        g_engine.bias = g_bias_allowed && v != 0;
         g_usePidBias = g_engine.bias;
         state_changed = true;
     } else if (cmd == "SET_MODE") {
@@ -777,6 +778,8 @@ int main(int argc, char** argv) {
         std::string arg = argv[i];
         if (arg == "--state-file" && i + 1 < argc) {
             g_engine.state_path = argv[++i];
+        } else if (arg == "--no-pid-bias") {
+            g_bias_allowed = false;
         }
     }
     load_state();
