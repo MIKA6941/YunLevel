@@ -15,7 +15,6 @@ const app = {
   view: 'control',
   state: null,
   loopSelection: new ControlWorkspace.SelectionStore(),
-  parameterSlider: null,
   history: {},
   streams: { level: new Set(['h1', 'h2', 'h3', 'sp1', 'sp2', 'sp3']), flow: new Set(['qin', 'q12', 'q23', 'qout']), valve: new Set(['pump', 'fv101', 'fv102', 'fv103', 'fv104']) },
   simEventSource: null,
@@ -748,7 +747,6 @@ function setConnection(ok, text) {
 
 function showLogin(error = '') {
   app.processDevices?.close();
-  app.parameterSlider?.close();
   app.loopSelection.clear();
   $('loopCards')?.replaceChildren();
   if ($('loopCards')) delete $('loopCards').dataset.signature;
@@ -786,7 +784,6 @@ function showApp() {
 
 function switchView(view) {
   app.processDevices?.close();
-  app.parameterSlider?.close();
   if (view === 'score') {
     const score = app.state?.score || {};
     if (score.active && !score.finished) {
@@ -1352,11 +1349,6 @@ function renderLoopWorkspace(loops, cascades) {
 function wireControlWorkspace() {
   app.workspaceMotion = WorkspaceMotion.create(document);
   app.parameterFeedback = ParameterFeedback.bind(document, { motion:app.workspaceMotion });
-  app.parameterSlider = ParameterSlider.bind(document, {
-    motion:app.workspaceMotion,
-    selector: '#loopCards input[data-field], #manualControls .field-grid input[type="number"]',
-    getPolicy: parameterSliderPolicy,
-  });
   const deviceContext = () => ({ model:workspaceModel(), state:app.state, account:app.me, view:app.view,
     selectedKey:app.loopSelection.current(workspaceModel())?.key, manualTargets:manualTargets(),
     pvUnit:pv => pvCatalogItem(pv).unit || '',
@@ -1370,9 +1362,9 @@ function wireControlWorkspace() {
   app.processDevices = ProcessDevices.bind(document, {
     getContext:deviceContext,
     controls:ProcessDeviceControls.create({ document, getContext:deviceContext, send:sendCommand,
-      feedback:app.parameterFeedback, policy:parameterSliderPolicy }),
+      feedback:app.parameterFeedback, policy:parameterInputPolicy }),
     select:selectDeviceLoop,
-    inspect:key => { selectDeviceLoop(key); app.parameterSlider.close(); $('loopWorkspace').scrollIntoView({ block:'nearest' });
+    inspect:key => { selectDeviceLoop(key); $('loopWorkspace').scrollIntoView({ block:'nearest' });
       $('loopCards').querySelector('.loop-card:not(.hidden) input')?.focus({ preventScroll:true }); },
     build:device => {
       document.querySelector('[data-control-tab="loops"]')?.click();
@@ -1397,7 +1389,7 @@ function wireControlWorkspace() {
   });
 }
 
-function parameterSliderPolicy(input) {
+function parameterInputPolicy(input) {
   return ControlWorkspace.parameterPolicy({
     field:input.dataset.field,
     label:input.closest('label')?.textContent.trim(),
